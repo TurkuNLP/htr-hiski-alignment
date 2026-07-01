@@ -43,10 +43,11 @@ def remove_overlaps_handle_page_breaks(
             overlaps_removed.append(deepcopy(latest))
 
     for i in range(len(overlaps_removed)):
+        current = overlaps_removed[i]
         overlaps_removed[i] = [
-            overlaps_removed[i][a_rows_idx],
-            overlaps_removed[i][b_rows_idx],
-            overlaps_removed[i][page_idx],
+            current[a_rows_idx],
+            current[b_rows_idx],
+            current[page_idx],
         ]
 
     return overlaps_removed
