@@ -32,9 +32,7 @@ def create_slices(
     ]
     b_ranges = [
         (i, i + b_block_size)
-        for i in range(
-            b_range_start, b_range_end - b_block_size, b_step
-        )
+        for i in range(b_range_start, b_range_end - b_block_size, b_step)
     ]
 
     a_slices = [a_rows[i:j] for i, j in a_ranges]
@@ -58,10 +56,12 @@ def score_pairs(target, query, scorer):
     return avg_score, scores
 
 
-def create_sim_m(a_slices, b_slices, scorer, join_char=None):
+def create_sim_m(a_slices, b_slices, scorer, join_char=None, progressbar=True):
     m = np.zeros(shape=(len(a_slices), len(b_slices)))
     individual_scores = []
-    for i in tqdm(range(len(a_slices))):
+    for i in (
+        tqdm(range(len(a_slices))) if progressbar else range(len(a_slices))
+    ):
         for j in range(len(b_slices)):
             if join_char:
                 s1 = join_char.join(a_slices[i])
@@ -71,17 +71,17 @@ def create_sim_m(a_slices, b_slices, scorer, join_char=None):
                 else:
                     m[i, j] = scorer(s1, s2) / 100  # max(len(s1), len(s2))
             else:
-                m[i, j], scores = score_pairs(
-                    a_slices[i], b_slices[j], scorer
-                )
+                m[i, j], scores = score_pairs(a_slices[i], b_slices[j], scorer)
                 individual_scores.append(scores)
 
     return m, individual_scores
 
 
-def create_sim_m_chrf(a_slices, b_slices, join_char=None):
+def create_sim_m_chrf(a_slices, b_slices, join_char=None, progressbar=True):
     m = np.zeros(shape=(len(a_slices), len(b_slices)))
-    for i in tqdm(range(len(a_slices))):
+    for i in (
+        tqdm(range(len(a_slices))) if progressbar else range(len(a_slices))
+    ):
         for j in range(len(b_slices)):
             pred = join_char.join(a_slices[i])
             ref = join_char.join(b_slices[j])
@@ -93,14 +93,16 @@ def create_sim_m_chrf(a_slices, b_slices, join_char=None):
 
 
 def create_sim_m_and_alignments_m(
-    a_slices, b_slices, aligner, join_char=None
+    a_slices, b_slices, aligner, join_char=None, progressbar=True
 ):
     m = np.zeros(shape=(len(a_slices), len(b_slices)))
     coordinates = [
         [0 for j in range(len(b_slices))] for i in range(len(a_slices))
     ]
     individual_scores = []
-    for i in tqdm(range(len(a_slices))):
+    for i in (
+        tqdm(range(len(a_slices))) if progressbar else range(len(a_slices))
+    ):
         for j in range(len(b_slices)):
             if join_char:
                 m[i, j], coordinates[i][j] = align_score_and_coordinates_str(
@@ -117,11 +119,22 @@ def create_sim_m_and_alignments_m(
     return m, coordinates, individual_scores
 
 
-def create_sim_m_heatmap(m, cmap=None, ax=None, figsize=(20, 10), xlabel="ocr block", ylabel="db block", zeros_together=False):
+def create_sim_m_heatmap(
+    m,
+    cmap=None,
+    cbar=True,
+    ax=None,
+    figsize=(20, 10),
+    xlabel="ocr block",
+    ylabel="db block",
+    zeros_together=False,
+    vmin=None,
+    vmax=None,
+):
     if not ax:
         fig, ax = plt.subplots(figsize=figsize)
 
-    ax = sns.heatmap(m, ax=ax, square=True, cmap=cmap)
+    ax = sns.heatmap(m, ax=ax, square=True, cmap=cmap, vmin=vmin, vmax=vmax, cbar=cbar)
     ax.set_xlabel(xlabel)
     ax.set_ylabel(ylabel)
 
