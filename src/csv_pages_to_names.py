@@ -2,6 +2,7 @@ import csv
 from pathlib import Path
 from natsort import natsorted
 import numpy as np
+import re
 
 
 def book_to_directory(book: dict) -> Path:
@@ -18,6 +19,9 @@ def file_paths_to_names(file_paths):
 
     return pages, names
 
+def count_col_upper_cases(row):
+    col_upper_cases = [len(re.sub("[^A-Z]", "", col)) for col in row]
+    return col_upper_cases
 
 def read_files(files_sorted: list[str]):
     pages = []
@@ -27,17 +31,21 @@ def read_files(files_sorted: list[str]):
             reader = csv.reader(file, delimiter=",")
 
             page_rows = []
-            col_total_lens = []
+            cols_with_most_upper_cases = []
             for row in reader:
                 page_rows.append([word.strip(' "') for word in row])
 
-                col_total_lens.append([len(col) for col in row] or [0])
+                upper_case_counts = count_col_upper_cases(row) or [0]
+                cols_with_most_upper_cases.append(
+                    np.argmax(upper_case_counts)
+                )
             
             pages.append(page_rows)
 
         name_col = np.argmax(
-            np.bincount([np.argmax(lens) for lens in col_total_lens if lens])
+            np.bincount(cols_with_most_upper_cases)
         )
+
         page_names = []
         for row in page_rows:
             if len(row) <= name_col:
