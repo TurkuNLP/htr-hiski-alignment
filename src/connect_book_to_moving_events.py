@@ -134,7 +134,7 @@ def connect_events_to_books(record: Path, db: Path) -> tuple[dict, dict]:
 
 print(
     connect_events_to_books(
-        Path("Moving_record_parishes_with_formats_v2.csv"),
-        Path("all_hiski_records.sqlite3")
+        Path("data/csv/Moving_record_parishes_with_formats_v2.csv"),
+        Path("data/all_hiski_records.sqlite3")
     )[0][10602]
 )
