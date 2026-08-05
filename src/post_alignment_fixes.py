@@ -15,7 +15,7 @@ def remove_overlaps_handle_page_breaks(
 
     overlaps_removed = []
 
-    overlaps_removed.append(deepcopy(connections[0]))
+    overlaps_removed.append(connections[0])
 
     for latest in connections[1:]:
         current = overlaps_removed[-1]
@@ -40,7 +40,7 @@ def remove_overlaps_handle_page_breaks(
                     current[b_rows_idx].append(b_val)
                     existing_pairs.add((a_val, b_val))
         else:
-            overlaps_removed.append(deepcopy(latest))
+            overlaps_removed.append(latest)
 
     for i in range(len(overlaps_removed)):
         current = overlaps_removed[i]
