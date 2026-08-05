@@ -145,14 +145,16 @@ def create_sim_m_heatmap(
 
 
 def two_way_max_m(sim_m):
+    sim_m_max = np.zeros(sim_m.shape)
+
     row_indices = np.arange(sim_m.shape[0])
     col_indices = np.arange(sim_m.shape[1])
-    row_argmax = sim_m.argmax(axis=0)
-    col_argmax = sim_m.argmax(axis=1)
 
-    sim_m_max = np.zeros(sim_m.shape)
+    col_argmax = sim_m.argmax(axis=1)
     sim_m_max[row_indices, col_argmax] = sim_m[row_indices, col_argmax]
-    sim_m_max[row_argmax, col_indices] = sim_m[row_argmax, col_indices]
+
+    row_argmax = sim_m_max.argmax(axis=0)
+    sim_m_max[row_argmax, col_indices] = sim_m_max[row_argmax, col_indices]
 
     return sim_m_max
 
@@ -160,18 +162,17 @@ def two_way_max_m(sim_m):
 def sim_m_max_threshold_cols_rows(
     sim_m_max, threshold, threshold_cols=True, threshold_rows=True
 ):
-    sim_m_max_indices = np.indices(sim_m_max.shape).transpose((1, 2, 0))
-
     if threshold_cols:
-        col_mask = sim_m_max.max(axis=0) > threshold
+        col_mask = np.any(sim_m_max >= threshold, axis=0)
     else:
         col_mask = np.ones(sim_m_max.shape[0], dtype=bool)
+
     if threshold_rows:
-        row_mask = sim_m_max.max(axis=1) > threshold
+        row_mask = np.any(sim_m_max >= threshold, axis=1)
     else:
         col_mask = np.ones(sim_m_max.shape[1], dtype=bool)
 
-    sim_m_max_thresholded = sim_m_max[row_mask][:, col_mask]
-    sim_m_max_thresholded_indices = sim_m_max_indices[row_mask][:, col_mask]
+    sim_m_max_thresholded = sim_m_max[np.ix_(row_mask, col_mask)]
+    sim_m_max_thresholded_indices = np.where(sim_m_max >= threshold)
 
     return sim_m_max_thresholded, sim_m_max_thresholded_indices
