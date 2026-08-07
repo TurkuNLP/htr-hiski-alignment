@@ -13,11 +13,10 @@ def remove_overlaps_handle_page_breaks(
     if not connections:
         return []
 
-    overlaps_removed = []
+    connections_copy = deepcopy(connections)
+    overlaps_removed = [connections_copy[0]]
 
-    overlaps_removed.append(connections[0])
-
-    for latest in connections[1:]:
+    for latest in connections_copy[1:]:
         current = overlaps_removed[-1]
 
         if (
@@ -32,25 +31,24 @@ def remove_overlaps_handle_page_breaks(
                 current[b_range_end_idx], latest[b_range_end_idx]
             )
 
-            existing_pairs = set(zip(current[a_rows_idx], current[b_rows_idx]))
+            existing_a = set(current[a_rows_idx])
+            existing_b = set(current[b_rows_idx])
 
             for a_val, b_val in zip(latest[a_rows_idx], latest[b_rows_idx]):
-                if (a_val, b_val) not in existing_pairs:
-                    current[a_rows_idx].append(a_val)
-                    current[b_rows_idx].append(b_val)
-                    existing_pairs.add((a_val, b_val))
+                if a_val in existing_a or b_val in existing_b:
+                    continue
+
+                current[a_rows_idx].append(a_val)
+                current[b_rows_idx].append(b_val)
+                existing_a.add(a_val)
+                existing_b.add(b_val)
         else:
             overlaps_removed.append(latest)
 
-    for i in range(len(overlaps_removed)):
-        current = overlaps_removed[i]
-        overlaps_removed[i] = [
-            current[a_rows_idx],
-            current[b_rows_idx],
-            current[page_idx],
-        ]
-
-    return overlaps_removed
+    return [
+        [item[a_rows_idx], item[b_rows_idx], item[page_idx]]
+        for item in overlaps_removed
+    ]
 
 def score_pairs_with_pages(connections, a_names, b_names, scorer):
     pair_scores_and_page = []
