@@ -17,6 +17,7 @@ def events_to_df(cursor: sqlite3.Cursor, table: str, parish_id: int):
         for row in parish_events
     ]
     for event in parish_events_as_dicts:
+        event["profession"] = event["profession"].split("\\K")[0]
         event["first_name"] = event["first_name"].split("\\K")[0]
         event["first_name"] = event["first_name"].split("föd")[0]
         event["patronym"] = event["patronym"].split("\\K")[0]
