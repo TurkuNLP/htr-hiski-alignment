@@ -1,4 +1,3 @@
-import evaluate
 from matplotlib import pyplot as plt
 import numpy as np
 import sacrebleu
@@ -12,33 +11,18 @@ from src.pairwise_align import (
 
 
 def create_slices(
-    a_rows,
-    b_rows,
-    a_block_size=1,
-    b_block_size=1,
-    a_step=1,
-    b_step=1,
-    a_range_start=0,
-    b_range_start=0,
-    a_range_end=None,
-    b_range_end=None,
+    rows, block_size=1, step_size=1, range_start=0, range_end=None
 ):
-    a_range_end = a_range_end if a_range_end else len(a_rows)
-    b_range_end = b_range_end if b_range_end else len(b_rows)
+    range_end = range_end if range_end else len(rows)
 
-    a_ranges = [
-        (i, i + a_block_size)
-        for i in range(a_range_start, a_range_end - a_block_size, a_step)
-    ]
-    b_ranges = [
-        (i, i + b_block_size)
-        for i in range(b_range_start, b_range_end - b_block_size, b_step)
+    ranges = [
+        (i, i + block_size)
+        for i in range(range_start, range_end - block_size, step_size)
     ]
 
-    a_slices = [a_rows[i:j] for i, j in a_ranges]
-    b_slices = [b_rows[i:j] for i, j in b_ranges]
+    slices = [rows[i:j] for i, j in ranges]
 
-    return a_slices, b_slices, a_ranges, b_ranges
+    return slices, ranges
 
 
 def score_pairs(target, query, scorer):

@@ -123,13 +123,11 @@ def books_sim_m(candidate_pair, base_dir, block_size=1, step=1, use_whole_pages=
         slices_b = names_b
     else:
         block_size = min(block_size, len(names_flat_a), len(names_flat_b))
-        slices_a, slices_b, ranges_a, ranges_b = create_slices(
-            names_flat_a,
-            names_flat_b,
-            a_block_size=block_size,
-            b_block_size=block_size,
-            a_step=step,
-            b_step=step,
+        slices_a, ranges_b = create_slices(
+            names_flat_a, block_size=block_size, step_size=step
+        )
+        slices_b, ranges_b = create_slices(
+            names_flat_a, block_size=block_size, step_size=step
         )
 
     sim_m, individual_scores = create_sim_m(
