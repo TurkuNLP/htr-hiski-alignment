@@ -1,4 +1,5 @@
 import numpy as np
+from scipy.ndimage import generic_filter
 from src.similarity_matrix import sim_m_max_threshold_cols_rows
 
 
@@ -71,3 +72,16 @@ def sliding_argmax(sim_m, window_size, step_size):
     ]
 
     return anchors
+
+def difference_from_mean(window):
+    center_idx = len(window) // 2
+    center_val = window[center_idx]
+
+    other_mean = (np.sum(window) - center_val) / (len(window) - 1)
+
+    return center_val - other_mean
+
+def sliding_difference_from_mean(sim_m, window_size):
+    diff_matrix = generic_filter(sim_m, difference_from_mean, window_size, mode="constant")
+
+    return diff_matrix
