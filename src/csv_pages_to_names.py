@@ -23,35 +23,39 @@ def count_col_upper_cases(row):
     col_upper_cases = [len(re.sub("[^A-Z]", "", col)) for col in row]
     return col_upper_cases
 
-def read_files(files_sorted: list[str]):
+def read_files(files_sorted: list[str], known_name_col: int = None):
     pages = []
     names = []
-    for file_name in files_sorted:
+
+    for page_idx, file_name in enumerate(files_sorted):
         with open(file_name, "r") as file:
             reader = csv.reader(file, delimiter=",")
 
             page_rows = []
             cols_with_most_upper_cases = []
-            for row in reader:
-                page_rows.append([word.strip(' "') for word in row])
 
-                upper_case_counts = count_col_upper_cases(row) or [0]
-                cols_with_most_upper_cases.append(
-                    np.argmax(upper_case_counts)
-                )
-            
+            for row_idx, row in enumerate(reader):
+                page_rows.append(([word.strip(' "') for word in row], page_idx, row_idx))
+
+                if not known_name_col:
+                    upper_case_counts = count_col_upper_cases(row) or [0]
+                    cols_with_most_upper_cases.append(
+                        np.argmax(upper_case_counts)
+                    )
+
             pages.append(page_rows)
 
-        name_col = np.argmax(
-            np.bincount(cols_with_most_upper_cases)
-        )
+        if known_name_col:
+            name_col = known_name_col
+        else:
+            name_col = np.argmax(np.bincount(cols_with_most_upper_cases))
 
         page_names = []
-        for row in page_rows:
-            if len(row) <= name_col:
-                page_names.append("")
+        for row_idx, row in enumerate(page_rows):
+            if len(row[0]) <= name_col:
+                page_names.append(("", page_idx, row_idx))
             else:
-                page_names.append(row[name_col])
+                page_names.append((row[0][name_col], page_idx, row_idx))
         names.append(page_names)
 
     return pages, names
