@@ -11,16 +11,32 @@ from src.pairwise_align import (
 
 
 def create_slices(
-    rows, block_size=1, step_size=1, range_start=0, range_end=None
+    rows, block_size=1, step_size=1, range_start=0, range_end=None, padding_value=None
 ):
-    range_end = range_end if range_end else len(rows)
+    rows_len = len(rows)
+    range_end = range_end if range_end is not None else rows_len
 
-    ranges = [
-        (i, i + block_size)
-        for i in range(range_start, range_end - block_size, step_size)
-    ]
+    if padding_value:
+        pad_count = block_size // 2
+        start = range_start - pad_count
+        end = range_end - block_size + 1 + pad_count
+    else:
+        start = range_start
+        end = range_end - block_size + 1
 
-    slices = [rows[i:j] for i, j in ranges]
+    ranges = []
+    slices = []
+
+    for i in range(start, end, step_size):
+        r_start = max(0, i)
+        r_end = min(rows_len, i + block_size)
+        ranges.append((r_start, r_end))
+        
+        pad_front = max(0, -i)
+        pad_back = max(0, (i + block_size) - rows_len)
+        
+        current_slice = [padding_value] * pad_front + list(rows[r_start:r_end]) + [padding_value] * pad_back
+        slices.append(tuple(current_slice))
 
     return slices, ranges
 
