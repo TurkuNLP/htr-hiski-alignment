@@ -1,3 +1,4 @@
+import numpy as np
 from copy import deepcopy
 
 
@@ -49,6 +50,41 @@ def remove_overlaps_handle_page_breaks(
         [item[a_rows_idx], item[b_rows_idx], item[page_idx]]
         for item in overlaps_removed
     ]
+
+
+def extract_alignment_block_centers(
+    slice_pairs, a_ranges, b_ranges, middle_idx
+):
+    mask = ~np.any(slice_pairs == None, axis=1)
+    valid_pairs = slice_pairs[mask].astype(int)
+
+    a_starts = a_ranges[valid_pairs[:, 0], 0]
+    b_starts = b_ranges[valid_pairs[:, 1], 0]
+
+    return np.array([a_starts + middle_idx, b_starts + middle_idx])
+
+
+def extract_unique(alignments, sim_m, make_b_unique: True, add_score: True):
+    scored_pairs = list(zip(*alignments, sim_m[*alignments]))
+    scored_pairs.sort(key=lambda x: x[2], reverse=True)
+
+    unique = {}
+
+    if make_b_unique:
+        b_assigned = set()
+        for a_idx, b_idx, score in scored_pairs:
+            if a_idx in unique or b_idx in b_assigned:
+                continue
+            unique[b_idx] = (a_idx, score) if add_score else a_idx
+            b_assigned.add(b_idx)
+    else:
+        for a_idx, b_idx, score in scored_pairs:
+            if a_idx in unique:
+                continue
+            unique[b_idx] = (a_idx, score) if add_score else a_idx
+
+    return unique
+
 
 def score_pairs_with_pages(connections, a_names, b_names, scorer):
     pair_scores_and_page = []
