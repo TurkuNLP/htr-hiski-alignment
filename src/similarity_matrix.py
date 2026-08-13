@@ -159,6 +159,25 @@ def two_way_max_m(sim_m):
     return sim_m_max
 
 
+def reciprocal_best_matches(sim_m):
+    row_argmax = sim_m.argmax(axis=1)
+    col_argmax = sim_m.argmax(axis=0)
+    
+    sim_m_rbm = np.zeros_like(sim_m)
+    
+    rows = np.arange(sim_m.shape[0])
+    cols = row_argmax
+    
+    is_reciprocal = (col_argmax[cols] == rows)
+    
+    final_rows = rows[is_reciprocal]
+    final_cols = cols[is_reciprocal]
+    
+    sim_m_rbm[final_rows, final_cols] = sim_m[final_rows, final_cols]
+    
+    return sim_m_rbm
+
+
 def sim_m_max_threshold_cols_rows(
     sim_m_max, threshold, threshold_cols=True, threshold_rows=True
 ):
