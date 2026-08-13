@@ -2,7 +2,7 @@ import re
 import unicodedata
 
 
-def value_to_cleaned_string(value):
+def value_to_cleaned_str(value):
     text = "" if value is None else str(value)
     text = text.split("\\K", 1)[0]
     text = unicodedata.normalize("NFC", text)
@@ -12,7 +12,7 @@ def value_to_cleaned_string(value):
 
 def clean_name_cols_db(event, cols_to_clean=["profession", "first_name", "patronym", "last_name"]):
     for col in cols_to_clean:
-        event[col] = _clean(event.get(col)).split("föd", 1)[0].strip()
+        event[col] = value_to_cleaned_str(event.get(col)).split("föd", 1)[0].strip()
 
     return event
 
