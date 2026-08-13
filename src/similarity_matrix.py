@@ -61,17 +61,17 @@ def score_pairs(target, query, scorer):
             q = " "
         scores.append(scorer(t.lower(), q.lower()))
 
-    scores = [score / 100 for score in scores]
+    scores = tuple(score / 100 for score in scores)
     avg_score = sum(scores) / len(target)
 
     return avg_score, scores
 
 
-def create_sim_m(a_slices, b_slices, scorer, join_char=None, n_workers=None, progressbar=True):
+def create_sim_m(a_slices, b_slices, scorer, join_char=None, n_workers=1, progressbar=True):
     individual_scores = []
     if join_char:
-        a_strs = [join_char.join(a) for a in a_slices]
-        b_strs = [join_char.join(b) for b in b_slices]
+        a_strs = tuple(join_char.join(a) for a in a_slices)
+        b_strs = tuple(join_char.join(b) for b in b_slices)
 
         m = process.cdist(
             a_strs, b_strs,
@@ -79,8 +79,8 @@ def create_sim_m(a_slices, b_slices, scorer, join_char=None, n_workers=None, pro
             workers=n_workers,
         ) / 100
 
-        a_empty = [len(s.strip()) == 0 for s in a_strs]
-        b_empty = [len(s.strip()) == 0 for s in b_strs]
+        a_empty = tuple(len(s.strip()) == 0 for s in a_strs)
+        b_empty = tuple(len(s.strip()) == 0 for s in b_strs)
         if any(a_empty):
             m[a_empty, :] = 0
         if any(b_empty):

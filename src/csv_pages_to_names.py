@@ -27,15 +27,15 @@ def read_files(files_sorted: list[str], known_name_col: int = None):
     pages = []
     names = []
 
-    for page_idx, file_name in enumerate(files_sorted):
+    for file_idx, file_name in enumerate(files_sorted):
         with open(file_name, "r") as file:
             reader = csv.reader(file, delimiter=",")
 
-            page_rows = []
+            file_rows = []
             cols_with_most_upper_cases = []
 
             for row_idx, row in enumerate(reader):
-                page_rows.append(([word.strip(' "') for word in row], page_idx, row_idx))
+                file_rows.append((tuple(word.strip(' "') for word in row), file_idx, row_idx))
 
                 if not known_name_col:
                     upper_case_counts = count_col_upper_cases(row) or [0]
@@ -43,21 +43,20 @@ def read_files(files_sorted: list[str], known_name_col: int = None):
                         np.argmax(upper_case_counts)
                     )
 
-            pages.append(page_rows)
+            pages.append(file_rows)
 
         if known_name_col:
             name_col = known_name_col
         else:
             name_col = np.argmax(np.bincount(cols_with_most_upper_cases))
 
-        page_names = []
-        for row_idx, row in enumerate(page_rows):
+        names_in_file = []
+        for row_idx, row in enumerate(file_rows):
             if len(row[0]) <= name_col:
-                page_names.append(("", page_idx, row_idx))
+                names_in_file.append(("", file_idx, row_idx))
             else:
-                page_names.append((row[0][name_col], page_idx, row_idx))
-        names.append(page_names)
-
+                names_in_file.append((row[0][name_col], file_idx, row_idx))
+        names.append(names_in_file)
     return pages, names
 
 
