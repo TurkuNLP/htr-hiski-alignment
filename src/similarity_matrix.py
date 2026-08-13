@@ -3,6 +3,7 @@ import numpy as np
 import sacrebleu
 from tqdm.notebook import tqdm
 import seaborn as sns
+from rapidfuzz import process
 
 from src.pairwise_align import (
     align_score_and_coordinates_pairs,
@@ -11,7 +12,13 @@ from src.pairwise_align import (
 
 
 def create_slices(
-    rows, block_size=1, step_size=1, range_start=0, range_end=None, pad=False, pad_value=None
+    rows,
+    block_size=1,
+    step_size=1,
+    range_start=0,
+    range_end=None,
+    pad=False,
+    pad_value=None,
 ):
     rows_len = len(rows)
     range_end = range_end if range_end is not None else rows_len
@@ -31,11 +38,15 @@ def create_slices(
         r_start = max(0, i)
         r_end = min(rows_len, i + block_size)
         ranges.append((r_start, r_end))
-        
+
         pad_front = max(0, -i)
         pad_back = max(0, (i + block_size) - rows_len)
-        
-        current_slice = [pad_value] * pad_front + list(rows[r_start:r_end]) + [pad_value] * pad_back
+
+        current_slice = (
+            [pad_value] * pad_front
+            + list(rows[r_start:r_end])
+            + [pad_value] * pad_back
+        )
         slices.append(tuple(current_slice))
 
     return slices, ranges
@@ -56,21 +67,30 @@ def score_pairs(target, query, scorer):
     return avg_score, scores
 
 
-def create_sim_m(a_slices, b_slices, scorer, join_char=None, progressbar=True):
-    m = np.zeros(shape=(len(a_slices), len(b_slices)))
+def create_sim_m(a_slices, b_slices, scorer, join_char=None, n_workers=None, progressbar=True):
     individual_scores = []
-    for i in (
-        tqdm(range(len(a_slices))) if progressbar else range(len(a_slices))
-    ):
-        for j in range(len(b_slices)):
-            if join_char:
-                s1 = join_char.join(a_slices[i])
-                s2 = join_char.join(b_slices[j])
-                if len(s1.strip()) == 0 or len(s2.strip()) == 0:
-                    m[i, j] = 0
-                else:
-                    m[i, j] = scorer(s1, s2) / 100  # max(len(s1), len(s2))
-            else:
+    if join_char:
+        a_strs = [join_char.join(a) for a in a_slices]
+        b_strs = [join_char.join(b) for b in b_slices]
+
+        m = process.cdist(
+            a_strs, b_strs,
+            scorer=scorer,
+            workers=n_workers,
+        ) / 100
+
+        a_empty = [len(s.strip()) == 0 for s in a_strs]
+        b_empty = [len(s.strip()) == 0 for s in b_strs]
+        if any(a_empty):
+            m[a_empty, :] = 0
+        if any(b_empty):
+            m[:, b_empty] = 0
+
+    else:
+        m = np.zeros(shape=(len(a_slices), len(b_slices)))
+        outer_range = tqdm(range(len(a_slices))) if progressbar else range(len(a_slices))
+        for i in outer_range:
+            for j in range(len(b_slices)):
                 m[i, j], scores = score_pairs(a_slices[i], b_slices[j], scorer)
                 individual_scores.append(scores)
 
@@ -134,7 +154,9 @@ def create_sim_m_heatmap(
     if not ax:
         fig, ax = plt.subplots(figsize=figsize)
 
-    ax = sns.heatmap(m, ax=ax, square=True, cmap=cmap, vmin=vmin, vmax=vmax, cbar=cbar)
+    ax = sns.heatmap(
+        m, ax=ax, square=True, cmap=cmap, vmin=vmin, vmax=vmax, cbar=cbar
+    )
     ax.set_xlabel(xlabel)
     ax.set_ylabel(ylabel)
 
@@ -150,11 +172,11 @@ def two_way_max_m(sim_m):
     row_indices = np.arange(sim_m.shape[0])
     col_indices = np.arange(sim_m.shape[1])
 
-    col_argmax = sim_m.argmax(axis=1)
-    sim_m_max[row_indices, col_argmax] = sim_m[row_indices, col_argmax]
+    row_argmax = sim_m.argmax(axis=1)
+    col_argmax = sim_m.argmax(axis=0)
 
-    row_argmax = sim_m_max.argmax(axis=0)
-    sim_m_max[row_argmax, col_indices] = sim_m_max[row_argmax, col_indices]
+    sim_m_max[row_indices, row_argmax] = sim_m[row_indices, row_argmax]
+    sim_m_max[col_argmax, col_indices] = sim_m[col_argmax, col_indices]
 
     return sim_m_max
 
