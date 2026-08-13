@@ -1,8 +1,9 @@
 import sqlite3
 import pandas as pd
+from src.name_cleanup import clean_name_cols_db
 
 
-def events_to_df(cursor: sqlite3.Cursor, table: str, parish_id: int):
+def parish_events_to_df(cursor: sqlite3.Cursor, table: str, parish_id: int):
     parish_events = cursor.execute(
         f"SELECT * FROM {table} WHERE parish_id={parish_id};"
     ).fetchall()
@@ -17,11 +18,7 @@ def events_to_df(cursor: sqlite3.Cursor, table: str, parish_id: int):
         for row in parish_events
     ]
     for event in parish_events_as_dicts:
-        event["profession"] = event["profession"].split("\\K")[0]
-        event["first_name"] = event["first_name"].split("\\K")[0]
-        event["first_name"] = event["first_name"].split("föd")[0]
-        event["patronym"] = event["patronym"].split("\\K")[0]
-        event["last_name"] = event["last_name"].split("\\K")[0]
+        event = clean_name_cols_db(event)
 
     events_df = pd.DataFrame.from_dict(parish_events_as_dicts)
     events_df = events_df.fillna("")
