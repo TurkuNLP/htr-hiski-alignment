@@ -14,7 +14,7 @@ def levenshtein_distance_extended(
     cnp.ndarray[double, ndim=2] substitute_costs,
     cnp.ndarray[double, ndim=1] insert_costs,
     cnp.ndarray[double, ndim=1] delete_costs,
-    dict deabbreviate_costs = None,
+    dict deabbreviate_costs,
     double deabbreviate_penalty = 1.0,
     int deabbreviate_max_len = 0
 ):
@@ -31,6 +31,8 @@ def levenshtein_distance_extended(
     cdef cnp.ndarray[Py_UCS4, ndim=1] string_1_char_codes = cnp.ndarray(m, dtype=np.uint32)
     cdef cnp.ndarray[Py_UCS4, ndim=1] string_2_char_codes = cnp.ndarray(n, dtype=np.uint32)
     cdef unordered_set[uint32_t] deabbreviate_char_codes
+    for key in deabbreviate_costs.keys():
+        deabbreviate_char_codes.insert(ord(key))
 
     for i in range(m + 1):
         dp[i, 0] = i
@@ -90,7 +92,7 @@ def lde_similarity(
     cnp.ndarray[double, ndim=2] substitute_costs,
     cnp.ndarray[double, ndim=1] insert_costs,
     cnp.ndarray[double, ndim=1] delete_costs,
-    dict deabbreviate_costs = None,
+    dict deabbreviate_costs,
     double deabbreviate_penalty = 1.0,
     int deabbreviate_max_len = 0
 ):
