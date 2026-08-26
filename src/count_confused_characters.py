@@ -1,48 +1,49 @@
 from collections import Counter
 
+import numpy as np
+
 
 def update_confusion_counter(
-    counter, place_name, nth_characters: dict[Counter], exclude_self=False
+    counter, place_spelling_alignments
 ):
-    for i, character in enumerate(place_name):
-        for character_counts in [
-            [char[0]] * char[1] for char in nth_characters[i].items()
-        ]:
-            if exclude_self and (character_counts[0] == character):
-                continue
-            elif (
-                character_counts[0] is not None
-                and character_counts[0].isalpha()
-            ):
-                counter[character].update(character_counts)
+    for place_name, spelling in place_spelling_alignments:
+        for i in range(len(place_name)):
+            counter[place_name[i]][spelling[i]] += 1
 
 
 def align_characters(place, place_spellings, aligner):
     place_as_list = list(place)
-    aligned_place_spellings = []
+    place_alignments = []
+    spelling_alignments = []
     for p_s in place_spellings:
-        aligned_place_spellings.append(aligner.align(place_as_list, p_s)[0][1])
+        alignment = aligner.align(place_as_list, p_s)[0]
+        place_alignments.append(alignment[0])
+        spelling_alignments.append(alignment[1])
 
-    return aligned_place_spellings
+    return place_alignments, spelling_alignments
 
+def pad_alignments(place_alignments, spelling_alignments):
+    place_alignments_padded, spelling_alignments_padded = [], []
 
-def get_nth_characters(aligned_place_spellings):
-    max_len = len(aligned_place_spellings[0])
-    nth_characters = []
-    for i in range(max_len):
-        c = Counter()
-        chars = [x[i] for x in aligned_place_spellings]
-        c.update(chars)
-        nth_characters.append(c)
+    max_len = max([max(len(x[0]), len(x[1])) for x in zip(place_alignments, spelling_alignments)])
+    for place_alignment, spelling_alignment in zip(place_alignments, spelling_alignments):
+        place_alignments_padded.append(
+            place_alignment + (max_len - len(place_alignment)) * [None]
+        )
+        spelling_alignments_padded.append(
+            spelling_alignment + (max_len - len(spelling_alignment)) * [None]
+        )
 
-    return nth_characters
+    return place_alignments, spelling_alignments
 
-def get_nth_characters_for_place(place, place_spellings, aligner):
-    aligned_place_spellings = align_characters(place, place_spellings, aligner)
+def counter_to_matrix(chars, confusion_counter, normalize=True):
+    matrix = np.zeros((len(chars), len(chars)))
 
-    max_len = max([len(x) for x in aligned_place_spellings])
-    for s in aligned_place_spellings:
-        s += (max_len - len(s)) * [None]
+    for c_1 in chars:
+        for c_2 in chars:
+            value = confusion_counter[c_1][c_2]
+            if normalize:
+                value = value / max(1, confusion_counter[c_1].total())
+            matrix[chars.index(c_1), chars.index(c_2)] = value
 
-    nth_characters = get_nth_characters(aligned_place_spellings)
-    return nth_characters
+    return matrix
