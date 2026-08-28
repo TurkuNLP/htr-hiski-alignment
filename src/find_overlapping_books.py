@@ -9,7 +9,6 @@ from src.csv_pages_to_names import (
 )
 from src.similarity_matrix import create_sim_m, create_slices
 
-
 def book_id_to_path(id, book_id_to_book, csv_data_directory):
     book_info = book_id_to_book[id]
     start_year = book_info["Start_year"]
@@ -46,6 +45,7 @@ def parish_check_overlaps_by_year(parish_books: list[dict]):
         "full": [],
         "partial_center": [],
         "partial_left_or_right": [],
+        "no_overlap": []
     }
 
     for i, book_a in enumerate(parish_books):
@@ -70,8 +70,8 @@ def parish_check_overlaps_by_year(parish_books: list[dict]):
                 book_b["End_year"],
             )
 
-            if overlap_type != "no_overlap":
-                overlapping_books[overlap_type].append((book_a, book_b))
+            #if overlap_type != "no_overlap":
+            overlapping_books[overlap_type].append((book_a, book_b))
 
     return overlapping_books
 
@@ -83,6 +83,7 @@ def check_churchbook_overlaps_by_year(
         "full": [],
         "partial_center": [],
         "partial_left_or_right": [],
+        "no_overlap": []
     }
 
     for p_id in parish_ids:
