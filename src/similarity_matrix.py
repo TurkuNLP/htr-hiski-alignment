@@ -69,7 +69,7 @@ def score_pairs(target, query, scorer):
 
 def create_sim_m(a_slices, b_slices, scorer, join_char=None, n_workers=1, progressbar=True):
     individual_scores = []
-    if join_char:
+    if join_char is not None:
         a_strs = tuple(join_char.join(a) for a in a_slices)
         b_strs = tuple(join_char.join(b) for b in b_slices)
 
