@@ -292,7 +292,7 @@ for book, image_ranges in tqdm(list(all_file_paths.items())):
 # In[1]:
 
 
-!jupyter \
-    nbconvert \
-    --to script \
-    extracting-migrations-all_migrations_with_metadata.ipynb
+#!jupyter \
+    #nbconvert \
+    #--to script \
+    #extracting-migrations-all_migrations_with_metadata.ipynb
