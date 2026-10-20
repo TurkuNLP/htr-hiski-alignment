@@ -1,7 +1,7 @@
 #!/usr/bin/env python
 # coding: utf-8
 
-# In[170]:
+# In[81]:
 
 
 import pandas as pd
@@ -9,64 +9,25 @@ from pathlib import Path
 from natsort import natsorted
 from src.csv_pages_to_names import read_files
 from collections import defaultdict
-from tqdm.notebook import tqdm
+from tqdm.cli import tqdm
 from src.extract_migrations_with_metadata.extract_from_row_columns import(
-    get_possibly_related_toponym,
+    get_possibly_related_toponyms,
     get_possible_name,
     get_has_information
 )
 import json
 
+# In[82]:
+
+
+#csv_data_directory = "data/migration-data-csv-release-v1/"
+csv_data_directory = "outputs/csv/migration-data-table_fix/"
+
 # ## Metadata
 
-# In[171]:
+# ### General
 
-
-def book_id_to_path(id, book_id_to_book, csv_data_directory):
-    book_info = book_id_to_book[id]
-    start_year = book_info["year_start"]
-    end_year = book_info["year_end"]
-    source = book_info["source"].lower()
-
-    return Path(csv_data_directory).glob(
-        f"*{book_info["parish_normalized"]}/*{start_year}-{end_year}_{source}"
-    )
-
-# In[172]:
-
-
-csv_data_directory = "data/migration-data-csv-release-v1/"
-book_ids_df = pd.read_json("outputs/json/book_ids.json", orient="index")
-book_ids_df.columns = ["parish_normalized", "year_start", "year_end", "source"]
-book_ids_df = book_ids_df.rename_axis("book_id")
-book_ids_to_info = book_ids_df.to_dict(orient="index")
-
-id_to_book = book_ids_df.to_dict(orient="index")
-book_path_stems = tuple(
-    tuple(i)
-    for i in book_ids_df.index.map(
-        lambda x: book_id_to_path(x, id_to_book, csv_data_directory)
-    ).to_list()
-)
-book_path_stems = pd.DataFrame(
-    {
-        "stem": tuple(
-            i[0].stem if len(i) > 0 else None for i in book_path_stems
-        )
-    },
-    index=book_ids_df.index,
-)
-
-book_to_id = {
-    v: k
-    for k, v in (
-        book_ids_df["parish_normalized"] + "_" + book_path_stems["stem"]
-    )
-    .to_dict()
-    .items()
-}
-
-# In[173]:
+# In[83]:
 
 
 original_book_metadata = pd.read_csv(
@@ -78,14 +39,14 @@ original_book_metadata["book_id"] = original_book_metadata["url"].apply(
 )
 original_book_metadata = original_book_metadata.drop("url", axis="columns")
 
-# In[ ]:
+# In[84]:
 
 
 event_year_df = pd.read_csv("outputs/csv/year_predictions_extended.csv")
 book_migration_metadata = pd.read_csv("outputs/csv/migration_books_metadata.csv")
 parish_df = pd.read_csv("data/csv/parish.csv")
 
-# In[ ]:
+# In[85]:
 
 
 book_migration_metadata["book"] = (
@@ -100,121 +61,153 @@ book_migration_metadata["book"] = (
     + book_migration_metadata["source"].astype(str)
 )
 
+# ### Print type columns
+
 # In[ ]:
-
-
-book_migration_metadata
-
-# In[179]:
 
 
 print_type_columns = pd.read_csv("outputs/csv/print_type_columns.csv")
 with open("outputs/json/print_type_column_names_categorized.json", "r") as fp:
     categorize_column_name = json.load(fp)
 
+
+print_type_columns.loc[print_type_columns["side"].isna(), "side"] = "both"
+print_type_and_side_to_cols = {
+    print_type.split(" ")[1]: dict(zip(group["side"], group["sarakkeet"]))
+    for print_type, group in print_type_columns.groupby("print type")
+}
+
+print_type_and_side_to_cols = {
+    print_type: {
+        side: [] if cols == "[]" else cols[2:-2].split("', '")
+        for side, cols in sides.items()
+    }
+    for print_type, sides in print_type_and_side_to_cols.items()
+}
+
+print_type_and_side_to_categorized_cols = {
+    print_type: {
+        side: tuple(categorize_column_name[column_name] for column_name in cols)
+        for side, cols in sides.items()
+    }
+    for print_type, sides in print_type_and_side_to_cols.items()
+}
+
 # ## Gather migrations
 
 # In[ ]:
 
 
-def default_d():
-    return defaultdict(dict)
+BOOK_TYPE_SEPARATORS = ("muuttaneet", "sekalaiset")
+GATHER_COLUMNS = [
+    "source",
+    "book",
+    "side",
+    "in_out",
+    "img_range_start",
+    "img_range_end",
+]
+
+# In[ ]:
 
 
-all_file_paths = defaultdict(default_d)
-for (
-    parish_id,
-    parish_normalized,
-    source,
-    book,
-    side,
-    in_out,
-    img_range_start,
-    img_range_end,
-) in tqdm(
-    book_migration_metadata[
-        [
-            "parish_id",
-            "parish_normalized",
-            "source",
-            "book",
-            "side",
-            "in_out",
-            "img_range_start",
-            "img_range_end",
-        ]
-    ].to_records(index=False)
-):
+def parse_book_name(book):
+    doctype = next((s for s in BOOK_TYPE_SEPARATORS if s in book), None)
+    if doctype is None:
+        raise ValueError(f"Unrecognized book name: {book}")
+    prefix, suffix = book.split(doctype)
+    parish = prefix[:-1]
+    years, source = suffix.split("_")[1:3]
+    year_start, year_end = years.split("-")
+    return doctype, parish, source.lower(), year_start, year_end
 
-    if "muuttaneet" in book:
-        doctype = "muuttaneet"
-    elif "sekalaiset" in book:
-        doctype = "sekalaiset"
-    book_split = book.split(doctype)
+# In[ ]:
 
-    parish = book_split[0][:-1]
-    book_info = book_split[1].split("_")[1:]
 
-    book_years = book_info[0].split("-")
-    book_year_start = book_years[0]
-    book_year_end = book_years[1]
-
-    p = (
-        csv_data_directory
-        + parish
-        + "/"
-        + f"{doctype}_{book_year_start}-{book_year_end}_{source}"
+def find_book_files(book, source, side, img_range_start, img_range_end):
+    doctype, parish, _, year_start, year_end = parse_book_name(book)
+    book_dir = (
+        Path(csv_data_directory)
+        / parish
+        / f"{doctype}_{year_start}-{year_end}_{source}"
     )
-    side = side if side != "both" else ""
     image_range = range(img_range_start, img_range_end + 1)
+    found_files = natsorted(map(str, book_dir.glob(f"*{side}*.csv")))
+    return [
+        path for path in found_files if int(path.split("_")[-3]) in image_range
+    ]
 
-    found_files = natsorted(map(str, Path(p).glob(f"*{side}*.csv")))
-    found_files = list(
-        filter(lambda x: int(x.split("_")[-3]) in image_range, found_files)
-    )
-    if not all_file_paths[book][f"{img_range_start}-{img_range_end}"].get(
-        in_out
-    ):
-        all_file_paths[book][f"{img_range_start}-{img_range_end}"][in_out] = []
-    all_file_paths[book][f"{img_range_start}-{img_range_end}"][in_out] += (
-        # natsorted(map(str, Path(p).glob(f"*{side}*.csv")))
-        found_files
-    )
-
-# In[199]:
+# In[ ]:
 
 
-book_page_side_to_year = event_year_df[~(event_year_df["book_id"] == 0)]
-book_page_side_to_year["key"] = (
-    book_page_side_to_year["book"].astype(str)
-    + "/" + book_page_side_to_year["page"].astype(str)
-    + "/" + book_page_side_to_year["side"]
-)
-book_page_side_to_year = book_page_side_to_year.set_index("key")
-book_page_side_to_year = book_page_side_to_year["year"].to_dict()
+def gather_file_paths(book_migration_metadata):
+    all_file_paths = defaultdict(lambda: defaultdict(lambda: defaultdict(list)))
+    rows = book_migration_metadata[GATHER_COLUMNS].to_records(index=False)
+    for source, book, side, in_out, start, end in tqdm(rows):
+        all_file_paths[book][f"{start}-{end}"][in_out] += find_book_files(
+            book, source, side, start, end
+        )
+    return all_file_paths
 
-# In[200]:
+# In[ ]:
 
 
-print_type_columns["print type"] = print_type_columns["print type"].apply(
-    lambda x: x.split(" ")[1]
-)
-print_type_and_side_to_cols = print_type_columns.set_index(
-    ["print type", "side"]
-)["sarakkeet"].to_dict()
+all_file_paths = gather_file_paths(book_migration_metadata)
 
-for print_type, cols in print_type_and_side_to_cols.items():
-    if cols == "[]":
-        print_type_and_side_to_cols[print_type] = []
-    else:
-        print_type_and_side_to_cols[print_type] = cols[2:-2].split("', '")
+# ## Turn into JSONL files
 
-print_type_and_side_to_categorized_cols = {
-    print_type: tuple(
-        categorize_column_name[column_name] for column_name in cols
-    )
-    for print_type, cols in print_type_and_side_to_cols.items()
-}
+# In[ ]:
+
+
+OUTPUT_DIR = Path("outputs/json/all_migration_events_parish_splits")
+BOOK_TYPE_SEPARATORS = ("muuttaneet", "sekalaiset")
+
+# In[ ]:
+
+
+def parish_output_path(parish_id):
+    return OUTPUT_DIR / f"{parish_id}_migration_events.jsonl"
+
+# In[ ]:
+
+
+def parse_book_name(book):
+    separator = next((s for s in BOOK_TYPE_SEPARATORS if s in book), None)
+    if separator is None:
+        raise ValueError(f"Unrecognized book name: {book}")
+    prefix, suffix = book.split(separator)
+    parish = prefix[:-1]
+    years, source = suffix.split("_")[1:3]
+    year_start, year_end = years.split("-")
+    return parish, source.lower(), year_start, year_end
+
+# In[ ]:
+
+
+def get_columns(print_type, side):
+    cols = print_type_and_side_to_cols.get(print_type, {}).get(side, [])
+    cols_categorized = print_type_and_side_to_categorized_cols.get(
+        print_type, {}
+    ).get(side, [])
+    return cols, cols_categorized
+
+# In[ ]:
+
+
+def build_row(row_idx, row, cols, cols_categorized, metadata):
+    row_writing = row[0]
+    return {
+        "row_data": row_writing,
+        "row_columns": cols,
+        "row_columns_categorized": cols_categorized,
+        "possible_name": get_possible_name(row_writing, cols_categorized),
+        "possibly_related_toponyms": get_possibly_related_toponyms(
+            row_writing, cols_categorized
+        ),
+        "file_row": row_idx,
+        "has_information": get_has_information(row_writing, threshold=4),
+        **metadata,
+    }
 
 # In[ ]:
 
@@ -227,8 +220,14 @@ book_to_print_type = (
     ].set_index(["book", "in_out"])["print"].to_dict()
 )
 
-# In[ ]:
-
+book_page_side_to_year = event_year_df[~(event_year_df["book_id"] == 0)]
+book_page_side_to_year["key"] = (
+    book_page_side_to_year["book"].astype(str)
+    + "/" + book_page_side_to_year["page"].astype(str)
+    + "/" + book_page_side_to_year["side"]
+)
+book_page_side_to_year = book_page_side_to_year.set_index("key")
+book_page_side_to_year = book_page_side_to_year["year"].to_dict()
 
 parish_to_parish_id = (
     book_migration_metadata[["parish_id", "parish_normalized"]]
@@ -237,98 +236,63 @@ parish_to_parish_id = (
     .to_dict()
 )
 
-# In[ ]:
-
-
-for b_id in parish_to_parish_id.values():
-    with open(
-        "outputs/json/all_migration_events_parish_splits/"
-        f"{parish_id}_migration_events.jsonl",
-        "w",
-    ) as fp:
-        fp.seek(0, 0)
-        fp.truncate()
-
-for book, image_ranges in tqdm(list(all_file_paths.items())):
-    migration_rows_to_write = []
-    if "muuttaneet" in book:
-        book_split = book.split("muuttaneet")
-    elif "sekalaiset" in book:
-        book_split = book.split("sekalaiset")
-    parish = book_split[0][:-1]
-    book_info = book_split[1].split("_")[1:]
-
-    book_source = book_info[1].lower()
-    book_years = book_info[0].split("-")
-    book_year_start = book_years[0]
-    book_year_end = book_years[1]
+def iter_book_rows(book, image_ranges):
+    parish, book_source, year_start, year_end = parse_book_name(book)
     parish_id = parish_to_parish_id[parish]
 
     for image_range, directions in image_ranges.items():
-        image_range_split = image_range.split("-")
+        range_start, range_end = image_range.split("-")
         for in_out, file_paths in directions.items():
-            pages, names = read_files(file_paths)
+            pages, _ = read_files(file_paths)
             print_type = book_to_print_type[(book, in_out)]
 
-            for i, page in enumerate(pages):
-                file_idx = i
-                file_path = file_paths[file_idx]
+            for file_path, page in zip(file_paths, pages):
                 split_path = file_path.split("_")
                 page_n = int(split_path[-3])
                 side = split_path[-2]
-                year = book_page_side_to_year.get(
-                   book + "/" + str(page_n) + "/" + side, 0
-                )
-                cols = print_type_and_side_to_cols.get(
-                    (print_type, side), []
-                )
-                cols_categorized = (
-                    print_type_and_side_to_categorized_cols.get(
-                        (print_type, side), []
-                    )
-                )
-
+                year = book_page_side_to_year.get(f"{book}/{page_n}/{side}", 0)
+                cols, cols_categorized = get_columns(print_type, side)
+                metadata = {
+                    "year_prediction": int(year),
+                    "file_path": file_path.replace(csv_data_directory, ""),
+                    "parish_id": parish_id,
+                    "book": book,
+                    "print_type": print_type,
+                    "book_source": book_source,
+                    "book_year_start": year_start,
+                    "book_year_end": year_end,
+                    "image_range_start": range_start,
+                    "image_range_end": range_end,
+                    "page_n": page_n,
+                    "in/out": in_out,
+                    "side": side,
+                }
                 for row_idx, row in enumerate(page):
-                    row_writing = row[0]
-                    possible_related_toponym = (
-                        get_possibly_related_toponym(
-                            row_writing, cols_categorized, in_out
-                        )
-                    )
-                    possible_name = get_possible_name(
-                        row_writing, cols_categorized
+                    yield parish_id, build_row(
+                        row_idx, row, cols, cols_categorized, metadata
                     )
 
-                    r = {
-                        "row_data": row[0],
-                        "row_columns": cols,
-                        "row_columns_categorized": cols_categorized,
-                        "year_prediction": int(year),
-                        "possible_name": possible_name,
-                        "possibly_related_toponym": possible_related_toponym,
-                        "file_path": file_path,
-                        "parish_id": parish_id,
-                        "book": book,
-                        "print_type": print_type,
-                        "book_source": book_source,
-                        "book_year_start": book_year_start,
-                        "book_year_end": book_year_end,
-                        "image_range_start": image_range_split[0],
-                        "image_range_end": image_range_split[1],
-                        "page_n": page_n,
-                        "file_row": row_idx,
-                        "in/out": in_out,
-                        "side": side,
-                        "has_information": get_has_information(
-                            row_writing, threshold=4
-                        )
-                    }
-                    migration_rows_to_write.append(
-                        json.dumps(r, ensure_ascii=False) + "\n"
-                    )
-    with open(
-        "outputs/json/all_migration_events_parish_splits/"
-        f"{parish_id}_migration_events.jsonl",
-        "a",
-    ) as fp:
-        fp.writelines(migration_rows_to_write)
+# In[ ]:
+
+
+OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
+for parish_id in parish_to_parish_id.values():
+    parish_output_path(parish_id).write_text("")
+
+for book, image_ranges in tqdm(list(all_file_paths.items())):
+    lines_by_parish = {}
+    for parish_id, row in iter_book_rows(book, image_ranges):
+        lines_by_parish.setdefault(parish_id, []).append(
+            json.dumps(row, ensure_ascii=False) + "\n"
+        )
+    for parish_id, lines in lines_by_parish.items():
+        with open(parish_output_path(parish_id), "a") as fp:
+            fp.writelines(lines)
+
+# In[1]:
+
+
+!jupyter \
+    nbconvert \
+    --to script \
+    extracting-migrations-all_migrations_with_metadata.ipynb
