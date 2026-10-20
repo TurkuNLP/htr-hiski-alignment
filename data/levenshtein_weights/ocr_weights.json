@@ -1,0 +1,44 @@
+{
+  "size": 256,
+  "classes": {
+    "vowels": "aeiouyäöå",
+    "vowels_upper": "AEIOUYÄÖÅ",
+    "consonants": "bcdfghjklmnpqrstvwxz",
+    "consonants_upper": "BCDFGHJKLMNPQRSTVWXZ",
+    "alphabet": "aeiouyäöåAEIOUYÄÖÅbcdfghjklmnpqrstvwxzBCDFGHJKLMNPQRSTVWXZ",
+    "colon": ":",
+    "punctuation": ".?"
+  },
+  "insert": {
+    "default": 2.0,
+    "overrides": {}
+  },
+  "delete": {
+    "default": 1.0,
+    "overrides": {".": 4.0, "?": 0.0, ":": 4.0}
+  },
+  "substitute": {
+    "default": 1.0,
+    "self_cost": 0.0,
+    "class_rules": [
+      [4.0, "alphabet", "colon", true],
+      [4.0, "alphabet", "punctuation", true]
+    ],
+    "pair_rules": [
+      [0.5, "ä", "a", true],
+      [0.5, "å", "a", true],
+      [0.5, "o", "a", true],
+      [0.25, "q", "g", true],
+      [0.25, "ö", "o", true],
+      [0.25, "v", "w", true]
+    ]
+  },
+  "deabbreviate": {
+    "default": 100.0,
+    "symbols": {
+      ":": [[0.25, ["vowels", "consonants"]]],
+      ".": [[2.0, ["vowels", "consonants"]]],
+      "?": [[2.0, ["vowels", "consonants"]]]
+    }
+  }
+}
