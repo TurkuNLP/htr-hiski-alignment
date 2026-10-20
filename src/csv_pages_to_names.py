@@ -19,9 +19,11 @@ def file_paths_to_names(file_paths):
 
     return pages, names
 
+
 def count_col_upper_cases(row):
     col_upper_cases = [len(re.sub("[^A-Z]", "", col)) for col in row]
     return col_upper_cases
+
 
 def read_files(files_sorted: list[str], known_name_col: int = None):
     pages = []
@@ -35,7 +37,9 @@ def read_files(files_sorted: list[str], known_name_col: int = None):
             cols_with_most_upper_cases = []
 
             for row_idx, row in enumerate(reader):
-                file_rows.append((tuple(word.strip(' "') for word in row), file_idx, row_idx))
+                file_rows.append(
+                    (tuple(word.strip() for word in row), file_idx, row_idx)
+                )
 
                 if not known_name_col:
                     upper_case_counts = count_col_upper_cases(row) or [0]
@@ -58,6 +62,23 @@ def read_files(files_sorted: list[str], known_name_col: int = None):
                 names_in_file.append((row[0][name_col], file_idx, row_idx))
         names.append(names_in_file)
     return pages, names
+
+
+def read_files_to_pages(files_sorted: list[str]):
+    pages = []
+    for file_idx, file_name in enumerate(files_sorted):
+        with open(file_name, "r") as file:
+            reader = csv.reader(file, delimiter=",")
+
+            file_rows = []
+            for row_idx, row in enumerate(reader):
+                file_rows.append(
+                    (row, file_idx, row_idx)
+                )
+
+            pages.append(file_rows)
+
+    return pages
 
 
 def flatten_page_names(page_names: list[list[str]]):

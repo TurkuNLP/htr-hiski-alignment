@@ -1,7 +1,7 @@
 #!/usr/bin/env python
 # coding: utf-8
 
-# In[14]:
+# In[7]:
 
 
 from src.fix_split_single_table_books import (
@@ -11,7 +11,7 @@ from src.fix_split_single_table_books import (
 )
 from tqdm.cli import tqdm
 
-# In[15]:
+# In[8]:
 
 
 INPUT_DIR = "data/migration-data-csv-release-v1/"
@@ -27,13 +27,13 @@ BOOK_METADATA_PATH = "outputs/csv/migration_books_metadata.csv"
 #!rm -r $OUTPUT_DIR
 #!cp -r $INPUT_DIR $OUTPUT_DIR
 
-# In[17]:
+# In[10]:
 
 
 books = load_single_table_books(BOOK_METADATA_PATH)
 files_to_fix = collect_files_to_fix(books, INPUT_DIR)
 
-# In[18]:
+# In[11]:
 
 
 for page_ranges in tqdm(files_to_fix.values()):
@@ -41,7 +41,7 @@ for page_ranges in tqdm(files_to_fix.values()):
         for files in in_out_files.values():
             replace_with_merged(files, INPUT_DIR, OUTPUT_DIR)
 
-# In[19]:
+# In[6]:
 
 
 #!jupyter \
