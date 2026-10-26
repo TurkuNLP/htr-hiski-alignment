@@ -9,9 +9,9 @@ import numpy as np
 import pandas as pd
 from rapidfuzz import distance, process
 
-
 # Config
 PageKey = tuple[str, int, str]
+
 
 @dataclass(frozen=True)
 class DuplicateConfig:
@@ -24,23 +24,39 @@ class DuplicateConfig:
     """
 
     max_year_diff: int = 10
-    correct_year_prediction_bounds: tuple = (1500, 1980)
+    valid_year_prediction_bounds: tuple = (1500, 1980)
+    allow_invalid_years: bool = True
     threshold: float = 0.6
     scorer: Callable = distance.Levenshtein.normalized_similarity
     max_duplicate_of_entries: int = 3
     all_directions: tuple = ("in", "out", "both", "?")
+    strict_directions: tuple = ("in", "out")
+    allow_unknown_directions: bool = True
+    min_info_count: int = 0
     join_char: str = ""
     n_workers: int = -1
     output_columns: tuple = (
-        "row_data", "row_columns", "row_columns_categorized",
-        "possible_name", "possibly_related_toponyms",
+        "row_data",
+        "row_columns",
+        "row_columns_categorized",
+        "possible_name",
+        "possibly_related_toponyms",
         "has_information",
         "year_prediction",
-        "book_year_start", "book_year_end",
-        "duplicate", "duplicate_of",
-        "page_n", "file_row", "in/out", "side",
-        "parish_id", "book", "print_type", "book_source",
-        "image_range_start", "image_range_end",
+        "book_year_start",
+        "book_year_end",
+        "duplicate",
+        "duplicate_of",
+        "page_n",
+        "file_row",
+        "in/out",
+        "side",
+        "parish_id",
+        "book",
+        "print_type",
+        "book_source",
+        "image_range_start",
+        "image_range_end",
         "file_path",
     )
     dtype: type = np.float32
@@ -65,41 +81,68 @@ def load_parish_df(parish_jsonl: str | Path) -> pd.DataFrame:
 
 
 # Duplicate discovery preparations
-def directions_eligible(direction_1: str, direction_2: str) -> bool:
-    """False only for a strict "in" vs "out" pair; "both" and "?" match anything."""
-    strict = {"in", "out"}
-    return not (
-        direction_1 in strict
-        and direction_2 in strict
-        and direction_1 != direction_2
-    )
+def directions_eligible(
+    direction_1: str,
+    direction_2: str,
+    strict_directions: set,
+    allow_unknown_directions: bool,
+) -> bool:
+    """
+    False only for two different strict_directions and unknown directions if
+    unknown directions allowed. If unknown directions not allowed, True only
+    for two same strict_directions.
+    """
+    if allow_unknown_directions:
+        return not (
+            direction_1 in strict_directions
+            and direction_2 in strict_directions
+            and direction_1 != direction_2
+        )
+    else:
+        return (
+            direction_1 in strict_directions
+            and direction_2 in strict_directions
+            and direction_1 == direction_2
+        )
 
-def build_valid_direction_pairs(all_directions) -> set[tuple[str, str]]:
+
+def build_valid_direction_pairs(
+    all_directions,
+    strict_directions={"in", "out"},
+    allow_unknown_directions=True,
+) -> set[tuple[str, str]]:
     return {
         (direction_1, direction_2)
         for direction_1, direction_2 in product(all_directions, repeat=2)
-        if directions_eligible(direction_1, direction_2)
+        if directions_eligible(
+            direction_1,
+            direction_2,
+            strict_directions=strict_directions,
+            allow_unknown_directions=allow_unknown_directions,
+        )
     }
 
-def build_page_records(parish_df: pd.DataFrame, join_char: str = "") -> list[dict]:
+
+def build_page_records(
+    parish_df: pd.DataFrame, join_char: str = ""
+) -> list[dict]:
     """
     One record per (book, page_n, side). Each record carries the joined page
     text and its character Counter, computed once and reused for every
     comparison involving the page.
     """
-    aggregated = (
-        parish_df.groupby(["book", "page_n", "side"], as_index=False)
-        .agg(
-            book_source=("book_source", "first"),
-            is_ap=("is_ap", "first"),
-            in_out=("in/out", "first"),
-            year_prediction=("year_prediction", "first"),
-            row_data_list=(
-                "row_data",
-                lambda x: list(chain.from_iterable(x)),
-            ),
-            row_indices=("row_data", lambda x: x.index.tolist()),
-        )
+    aggregated = parish_df.groupby(
+        ["book", "page_n", "side"], as_index=False
+    ).agg(
+        book_source=("book_source", "first"),
+        is_ap=("is_ap", "first"),
+        in_out=("in/out", "first"),
+        year_prediction=("year_prediction", "first"),
+        row_data_list=(
+            "row_data",
+            lambda x: list(chain.from_iterable(x)),
+        ),
+        row_indices=("row_data", lambda x: x.index.tolist()),
     )
     pages = aggregated.to_dict(orient="records")
     for p in pages:
@@ -107,11 +150,13 @@ def build_page_records(parish_df: pd.DataFrame, join_char: str = "") -> list[dic
         p["char_counter"] = Counter(p["text"])
     return pages
 
+
 def group_pages_by_book(pages: list[dict]) -> dict[str, list[dict]]:
     book_to_pages: dict[str, list] = defaultdict(list)
     for p in pages:
         book_to_pages[p["book"]].append(p)
     return book_to_pages
+
 
 def group_by_direction_and_year(
     ref_pages: list[dict],
@@ -131,17 +176,38 @@ def group_by_direction(
 
     return by_dir
 
+
+def build_page_records(parish_df: pd.DataFrame, join_char: str = "") -> list[dict]:
+    aggregated = (
+        parish_df.groupby(["book", "page_n", "side"], as_index=False)
+        .agg(
+            book_source=("book_source", "first"),
+            is_ap=("is_ap", "first"),
+            in_out=("in/out", "first"),
+            year_prediction=("year_prediction", "first"),
+            info_count=("has_information", "sum"),  # count of rows with information
+            row_data_list=(
+                "row_data",
+                lambda x: list(chain.from_iterable(x)),
+            ),
+            row_indices=("row_data", lambda x: x.index.tolist()),
+        )
+    )
+    pages = aggregated.to_dict(orient="records")
+    for p in pages:
+        p["text"] = join_char.join(p["row_data_list"])
+        p["char_counter"] = Counter(p["text"])
+    return pages
+
+
 def compute_book_order(pages: list[dict]) -> list[str]:
-    """AP books first (reference), then non-AP books by descending page count."""
+    """AP books first (reference), then non-AP books by descending informative event count."""
     ap_books = {p["book"] for p in pages if p["is_ap"]}
     non_ap_counts: dict[str, int] = defaultdict(int)
     for p in pages:
         if not p["is_ap"]:
-            non_ap_counts[p["book"]] += 1
-    non_ap_order = sorted(
-        non_ap_counts,
-        key=lambda b: -non_ap_counts[b]
-    )
+            non_ap_counts[p["book"]] += p["info_count"]
+    non_ap_order = sorted(non_ap_counts, key=lambda b: -non_ap_counts[b])
     return list(ap_books) + non_ap_order
 
 
@@ -172,22 +238,33 @@ def page_similarity_matrix(
     sim[np.ix_(ref_idx, cand_idx)] = sub
     return sim
 
+
 # Duplicate discovery
 def select_year_eligible(
     cand_dir_pages: list[dict],
     ref_year: int,
     max_year_diff: int,
-    correct_year_bounds: tuple,
+    valid_year_bounds: tuple,
+    allow_invalid_years: bool,
 ) -> list[dict]:
-    return [
-        page
-        for page in cand_dir_pages
-        if (
-            min(ref_year, page["year_prediction"]) <= correct_year_bounds[0]
-            or min(ref_year, page["year_prediction"]) >= correct_year_bounds[1]
-        )
-        or abs(page["year_prediction"] - ref_year) <= max_year_diff
-    ]
+    if allow_invalid_years:
+        return [
+            page
+            for page in cand_dir_pages
+            if (
+                min(ref_year, page["year_prediction"])
+                <= valid_year_bounds[0]
+                or min(ref_year, page["year_prediction"])
+                >= valid_year_bounds[1]
+            )
+            or abs(page["year_prediction"] - ref_year) <= max_year_diff
+        ]
+    else:
+        return [
+            page
+            for page in cand_dir_pages
+            if abs(page["year_prediction"] - ref_year) <= max_year_diff
+        ]
 
 
 def match_ref_group_to_candidates(
@@ -225,7 +302,7 @@ def match_book_pair(
     cand_pages: list[dict],
     config: DuplicateConfig,
     duplicate_page_matches: dict[PageKey, list],
-    valid_direction_pairs: set
+    valid_direction_pairs: set,
 ) -> None:
     cand_by_dir = group_by_direction(cand_pages)
 
@@ -236,8 +313,9 @@ def match_book_pair(
             year_eligible = select_year_eligible(
                 cand_dir_pages,
                 ref_year,
-                config.max_year_diff,
-                config.correct_year_prediction_bounds
+                max_year_diff=config.max_year_diff,
+                valid_year_bounds=config.valid_year_prediction_bounds,
+                allow_invalid_years=config.allow_invalid_years
             )
             if not year_eligible:
                 continue
@@ -251,9 +329,18 @@ def find_duplicate_pages(
 ) -> dict[PageKey, list[dict]]:
     """page_key -> matches accumulated across all ordered book pairs."""
     book_order = compute_book_order(pages)
-    book_to_pages = group_pages_by_book(pages)
+    # Pages with no informative rows cannot produce meaningful duplicate matches
+    # on either side so they are excluded from comparison
+    informative_pages = [
+        p for p in pages if p["info_count"] >= config.min_info_count
+    ]
+    book_to_pages = group_pages_by_book(informative_pages)
     duplicate_page_matches: dict[PageKey, list] = defaultdict(list)
-    valid_direction_pairs = build_valid_direction_pairs(config.all_directions)
+    valid_direction_pairs = build_valid_direction_pairs(
+        all_directions=config.all_directions,
+        strict_directions=set(config.strict_directions),
+        allow_unknown_directions=True
+    )
 
     for i, ref_book in enumerate(book_order[:-1]):
         ref_pages = book_to_pages[ref_book]
@@ -261,13 +348,16 @@ def find_duplicate_pages(
             continue
         ref_by_dir_year = group_by_direction_and_year(ref_pages)
 
-        for cand_book in book_order[i + 1 :]:
+        for cand_book in book_order[i + 1:]:
             cand_pages = book_to_pages[cand_book]
             if not cand_pages:
                 continue
             match_book_pair(
-                ref_by_dir_year, cand_pages, config, duplicate_page_matches,
-                valid_direction_pairs
+                ref_by_dir_year=ref_by_dir_year,
+                cand_pages=cand_pages,
+                config=config,
+                duplicate_page_matches=duplicate_page_matches,
+                valid_direction_pairs=valid_direction_pairs
             )
 
     return duplicate_page_matches
@@ -295,13 +385,10 @@ def apply_duplicate_flags(
 
 
 def write_parish_jsonl(
-    parish_df: pd.DataFrame, output_path: str | Path, config: DuplicateConfig
+    parish_df: pd.DataFrame, output_path: str | Path, output_columns
 ) -> None:
-    parish_df[config.output_columns].to_json(
-        output_path,
-        orient="records",
-        lines=True,
-        force_ascii=False
+    parish_df[output_columns].to_json(
+        output_path, orient="records", lines=True, force_ascii=False
     )
 
 
@@ -320,5 +407,7 @@ def process_parish(
         parish_df, pages, matches, config.max_duplicate_of_entries
     )
     write_parish_jsonl(
-        parish_df, Path(output_dir) / f"{p_id}_migration_events.jsonl"
+        parish_df,
+        Path(output_dir) / f"{p_id}_migration_events.jsonl",
+        output_columns=list(config.output_columns),
     )
