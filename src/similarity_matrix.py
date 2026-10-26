@@ -70,14 +70,14 @@ def score_pairs(target, query, scorer):
 def create_sim_m(a_slices, b_slices, scorer, join_char=None, n_workers=1, progressbar=True):
     individual_scores = []
     if join_char is not None:
-        a_strs = tuple(join_char.join(a) for a in a_slices)
-        b_strs = tuple(join_char.join(b) for b in b_slices)
+        a_strs = tuple(join_char.join(a) if any(a) else ""  for a in a_slices)
+        b_strs = tuple(join_char.join(b) if any(b) else ""  for b in b_slices)
 
         m = process.cdist(
             a_strs, b_strs,
             scorer=scorer,
             workers=n_workers,
-        ) / 100
+        )
 
         a_empty = tuple(len(s.strip()) == 0 for s in a_strs)
         b_empty = tuple(len(s.strip()) == 0 for s in b_strs)
