@@ -50,24 +50,31 @@ with open("data/patron_split.txt", "r") as fp:
 
 valid_names = valid_first_names | valid_last_names | valid_patronyms
 valid_months = {
-    "Tammikuu", "tammikuu", "tammi", "januari",
-    "Helmikuu", "helmikuu", "helmi", "februari",
-    "Maaliskuu", "maaliskuu", "maalis", "mars",
-    "Huhtikuu", "huhtikuu", "huhti", "april",
-    "Toukokuu", "toukokuu", "touko", "maj",
-    "Kesäkuu", "kesäkuu", "kesä", "juni",
-    "Heinäkuu", "heinäkuu", "heinä", "juli",
-    "Elokuu", "elokuu", "elo", "augusti",
-    "Syyskuu", "syyskuu", "syys", "september",
-    "Lokakuu", "lokakuu", "loka", "oktober",
-    "Marraskuu", "marraskuu", "marras", "november",
-    "Joulukuu", "joulukuu", "joulu", "december",
-    "Tammik.", "Helmik.", "Maalisk.", "Huhtik.",
-    "Toukok.", "Kesäk.", "Heinäk.", "Elok.",
-    "Syysk.", "Lokak.", "Marrask.", "Jouluk.",
-    "tammik.", "helmik.", "maalisk.", "huhtik.",
-    "toukok.", "kesäk.", "heinäk.", "elok.",
-    "syysk.", "lokak.", "marrask.", "jouluk.",
+    "Tammikuu", "tammikuu", "Tammik.", "tammik.", "Tammi", "tammi",
+    "Helmikuu", "helmikuu", "Helmik.", "helmik.", "Helmi", "helmi",
+    "Maaliskuu", "maaliskuu", "Maalisk.", "maalisk.", "Maalis", "maalis",
+    "Huhtikuu", "huhtikuu", "Huhtik.", "huhtik.", "Huhti", "huhti",
+    "Toukokuu", "toukokuu", "Toukok.", "toukok.", "Touko", "touko",
+    "Kesäkuu", "kesäkuu", "Kesäk.", "kesäk.", "Kesä", "kesä",
+    "Heinäkuu", "heinäkuu", "Heinäk.", "heinäk.", "Heinä", "heinä",
+    "Elokuu", "elokuu", "Elok.", "elok.", "Elo", "elo",
+    "Syyskuu", "syyskuu", "Syysk.", "syysk.", "Syys", "syys",
+    "Lokakuu", "lokakuu", "Lokak.", "lokak.", "Loka", "loka",
+    "Marraskuu", "marraskuu", "Marrask.", "marrask.", "Marras", "marras",
+    "Joulukuu", "joulukuu", "Jouluk.", "jouluk.", "Joulu", "joulu",
+
+    "Januari", "januari", "Jan.", "jan.",
+    "Februari", "februari", "Febr.", "febr.",
+    "Mars", "mars", 
+    "April", "april", "Apr.", "apr.",
+    "Maj", "maj",
+    "Juni", "juni", "Jun.", "jun.",
+    "Juli", "juli", "Jul.", "jul.",
+    "Augusti", "augusti", "Aug.", "aug.",
+    "September", "september", "Sept.", "sept.",
+    "Oktober", "oktober", "Okt.", "okt.",
+    "November", "november", "Nov.", "nov.",
+    "December", "december", "Dec.", "dec.",
 }
 valid_marital_statuses = {
     "Nainut",
@@ -87,15 +94,18 @@ SCORE_CUTOFF = 60
 MIN_SCORE = 60
 GAP_THRESHOLD = 10
 MAX_MEAN_N_WORDS = 3.0
-VALUES_TO_FILL = {'"', '-"-', "1o", "do", "Do", "jo", "J"}
-
-jsons = tuple(Path(
-    "outputs/json/all_migration_events_parish_splits/"
-).glob("*.jsonl"))
+MIN_MEAN_VALUE_LEN = 2.5
+VALUES_TO_FILL = {'"', '-"-' '-"', '"-', "1o", "2o", "2i", "do", "Do", "jo", "J"}
+MARITAL_STATUS_SCORE_THRESHOLD = 75
+MONTH_SCORE_THRESHOLD = 75
 
 valid_toponyms = tuple(valid_toponyms)
 valid_months = tuple(valid_months)
 valid_marital_statuses= tuple(valid_marital_statuses)
+
+jsons = tuple(Path(
+    "outputs/json/all_migration_events_parish_splits/"
+).glob("*.jsonl"))
 
 for events_json in tqdm(jsons):
     events = pd.read_json(events_json, lines=True)
@@ -132,16 +142,19 @@ for events_json in tqdm(jsons):
         ]
 
         page_features = compute_column_features(
-                filled_columns=group_cols_filled,
-                toponym_scores=toponym_scores,
-                month_scores=month_scores,
-                marital_status_scores=marital_status_scores
-            ) 
+            filled_columns=group_cols_filled,
+            toponym_scores=toponym_scores,
+            month_scores=month_scores,
+            marital_status_scores=marital_status_scores
+        ) 
         group_toponym_cols = find_toponym_columns(
             page_features,
             min_score=MIN_SCORE,
             gap_threshold=GAP_THRESHOLD,
-            max_mean_n_words=MAX_MEAN_N_WORDS
+            max_mean_n_words=MAX_MEAN_N_WORDS,
+            min_mean_alphabetic_value_len=MIN_MEAN_VALUE_LEN,
+            marital_status_score_threshold=MARITAL_STATUS_SCORE_THRESHOLD,
+            month_score_threshold=MONTH_SCORE_THRESHOLD,
         )
 
         output_data = {
@@ -151,12 +164,13 @@ for events_json in tqdm(jsons):
             "toponym_columns": []
         }
 
-        for col_idx in group_toponym_cols:
+        for col_idx, score in group_toponym_cols:
             filled = group_cols_filled[col_idx]
             non_empty_values = list(filter(bool, filled))
             output_data["toponym_columns"].append({
                 "column_index": col_idx,
-                "values": non_empty_values
+                "values": non_empty_values,
+                "score": score
             })
 
         book_outputs.append(output_data)
