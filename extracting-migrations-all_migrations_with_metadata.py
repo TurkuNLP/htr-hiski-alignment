@@ -1,9 +1,5 @@
 #!/usr/bin/env python
-# coding: utf-8
-
-# In[81]:
-
-
+import argparse
 import pandas as pd
 from pathlib import Path
 from natsort import natsorted
@@ -17,37 +13,29 @@ from src.extract_migrations_with_metadata.extract_from_row_columns import(
 )
 import json
 
-# In[82]:
+argparser = argparse.ArgumentParser()
+argparser.add_argument("-b", "--books")
+argparser.add_argument("-y", "--year-predictions")
+argparser.add_argument("-m", "--books-metadata")
+argparser.add_argument("-o", "--output")
+args = argparser.parse_args()
+
+# "outputs/csv/migration-data-table_fix/"
+CSV_DATA_DIRECTORY = args.books
+# "outputs/csv/year_predictions_extended.csv"
+YEAR_PREDICTIONS = args.year_predictions
+# "outputs/csv/migration_books_metadata.csv"
+BOOKS_METADATA = args.books_metadata
+# "outputs/json/all_migration_events_parish_splits"
+OUTPUT_DIR = Path(args.output)
 
 
-#csv_data_directory = "data/migration-data-csv-release-v1/"
-csv_data_directory = "outputs/csv/migration-data-table_fix/"
+# Metadata
 
-# ## Metadata
+## General
 
-# ### General
-
-# In[83]:
-
-
-original_book_metadata = pd.read_csv(
-    "data/csv/Moving_record_parishes_with_formats_v2.csv"
-)
-original_book_metadata = original_book_metadata.dropna(subset="url")
-original_book_metadata["book_id"] = original_book_metadata["url"].apply(
-    lambda x: int(x.split("=")[-1])
-)
-original_book_metadata = original_book_metadata.drop("url", axis="columns")
-
-# In[84]:
-
-
-event_year_df = pd.read_csv("outputs/csv/year_predictions_extended.csv")
-book_migration_metadata = pd.read_csv("outputs/csv/migration_books_metadata.csv")
-parish_df = pd.read_csv("data/csv/parish.csv")
-
-# In[85]:
-
+event_year_df = pd.read_csv(YEAR_PREDICTIONS)
+book_migration_metadata = pd.read_csv(BOOKS_METADATA)
 
 book_migration_metadata["book"] = (
     book_migration_metadata["parish_normalized"].astype(str)
@@ -61,10 +49,7 @@ book_migration_metadata["book"] = (
     + book_migration_metadata["source"].astype(str)
 )
 
-# ### Print type columns
-
-# In[ ]:
-
+### Print type columns
 
 print_type_columns = pd.read_csv("outputs/csv/print_type_columns.csv")
 with open("outputs/json/print_type_column_names_categorized.json", "r") as fp:
@@ -93,10 +78,7 @@ print_type_and_side_to_categorized_cols = {
     for print_type, sides in print_type_and_side_to_cols.items()
 }
 
-# ## Gather migrations
-
-# In[ ]:
-
+## Gather migrations
 
 BOOK_TYPE_SEPARATORS = ("muuttaneet", "sekalaiset")
 GATHER_COLUMNS = [
@@ -108,9 +90,6 @@ GATHER_COLUMNS = [
     "img_range_end",
 ]
 
-# In[ ]:
-
-
 def parse_book_name(book):
     doctype = next((s for s in BOOK_TYPE_SEPARATORS if s in book), None)
     if doctype is None:
@@ -121,13 +100,10 @@ def parse_book_name(book):
     year_start, year_end = years.split("-")
     return doctype, parish, source.lower(), year_start, year_end
 
-# In[ ]:
-
-
 def find_book_files(book, source, side, img_range_start, img_range_end):
     doctype, parish, _, year_start, year_end = parse_book_name(book)
     book_dir = (
-        Path(csv_data_directory)
+        Path(CSV_DATA_DIRECTORY)
         / parish
         / f"{doctype}_{year_start}-{year_end}_{source}"
     )
@@ -136,9 +112,6 @@ def find_book_files(book, source, side, img_range_start, img_range_end):
     return [
         path for path in found_files if int(path.split("_")[-3]) in image_range
     ]
-
-# In[ ]:
-
 
 def gather_file_paths(book_migration_metadata):
     all_file_paths = defaultdict(lambda: defaultdict(lambda: defaultdict(list)))
@@ -149,27 +122,14 @@ def gather_file_paths(book_migration_metadata):
         )
     return all_file_paths
 
-# In[ ]:
-
-
 all_file_paths = gather_file_paths(book_migration_metadata)
 
-# ## Turn into JSONL files
+## Make JSONL files
 
-# In[ ]:
-
-
-OUTPUT_DIR = Path("outputs/json/all_migration_events_parish_splits")
 BOOK_TYPE_SEPARATORS = ("muuttaneet", "sekalaiset")
-
-# In[ ]:
-
 
 def parish_output_path(parish_id):
     return OUTPUT_DIR / f"{parish_id}_migration_events.jsonl"
-
-# In[ ]:
-
 
 def parse_book_name(book):
     separator = next((s for s in BOOK_TYPE_SEPARATORS if s in book), None)
@@ -181,18 +141,12 @@ def parse_book_name(book):
     year_start, year_end = years.split("-")
     return parish, source.lower(), year_start, year_end
 
-# In[ ]:
-
-
 def get_columns(print_type, side):
     cols = print_type_and_side_to_cols.get(print_type, {}).get(side, [])
     cols_categorized = print_type_and_side_to_categorized_cols.get(
         print_type, {}
     ).get(side, [])
     return cols, cols_categorized
-
-# In[ ]:
-
 
 def build_row(row_idx, row, cols, cols_categorized, metadata):
     row_writing = row[0]
@@ -208,9 +162,6 @@ def build_row(row_idx, row, cols, cols_categorized, metadata):
         "has_information": get_has_information(row_writing, threshold=4),
         **metadata,
     }
-
-# In[ ]:
-
 
 book_to_print_type = (
     book_migration_metadata[
@@ -254,7 +205,7 @@ def iter_book_rows(book, image_ranges):
                 cols, cols_categorized = get_columns(print_type, side)
                 metadata = {
                     "year_prediction": int(year),
-                    "file_path": file_path.replace(csv_data_directory, ""),
+                    "file_path": file_path.replace(CSV_DATA_DIRECTORY, ""),
                     "parish_id": parish_id,
                     "book": book,
                     "print_type": print_type,
@@ -272,9 +223,6 @@ def iter_book_rows(book, image_ranges):
                         row_idx, row, cols, cols_categorized, metadata
                     )
 
-# In[ ]:
-
-
 OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 for parish_id in parish_to_parish_id.values():
     parish_output_path(parish_id).write_text("")
@@ -288,11 +236,3 @@ for book, image_ranges in tqdm(list(all_file_paths.items())):
     for parish_id, lines in lines_by_parish.items():
         with open(parish_output_path(parish_id), "a") as fp:
             fp.writelines(lines)
-
-# In[1]:
-
-
-#!jupyter \
-    #nbconvert \
-    #--to script \
-    #extracting-migrations-all_migrations_with_metadata.ipynb
