@@ -1,24 +1,22 @@
 import numpy as np
 import rapidfuzz
+from itertools import zip_longest
 
 # Helper functions
 
 def transpose_page_table(page_data):
-    n_columns = max(map(len, page_data))
     return [
-        [row[col] if len(row) > col else "" for row in page_data]
-        for col in range(n_columns)
+        list(col) for col in zip_longest(*page_data, fillvalue="")
     ]
 
-
-def fill_values(column, cells_to_replace={'"', "1o", "do", "Do", "jo", "J"}):
-    column_no_whitespace = [c.strip() for c in column]
+def fill_values(column, values_to_fill={'"', "1o", "do", "Do", "jo", "J"}):
     filled_cells = []
     last_value = None
-    for cell in column_no_whitespace:
+    for cell in column:
+        cell = cell.strip()
         if cell == "":
             filled_cells.append(cell)
-        elif cell in cells_to_replace and last_value is not None:
+        elif cell in values_to_fill and last_value is not None:
             index = len(filled_cells) - 1
             while index >= 0 and filled_cells[index] == "":
                 filled_cells[index] = last_value
@@ -26,10 +24,9 @@ def fill_values(column, cells_to_replace={'"', "1o", "do", "Do", "jo", "J"}):
             filled_cells.append(last_value)
         else:
             filled_cells.append(cell)
-            if cell not in cells_to_replace:
+            if cell not in values_to_fill:
                 last_value = cell
     return filled_cells
-
 
 def should_score_cell(cell: str, isdigit_threshold=0.5) -> bool:
     """
@@ -39,7 +36,7 @@ def should_score_cell(cell: str, isdigit_threshold=0.5) -> bool:
         return False
     if cell.isdigit():
         return False
-    if sum(c.isdigit() for c in cell) / len(cell) > isdigit_threshold:
+    if sum(c.isdigit() for c in cell) / len(cell) >= isdigit_threshold:
         return False
     return True
 

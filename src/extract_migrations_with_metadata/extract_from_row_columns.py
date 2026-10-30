@@ -184,5 +184,5 @@ def iter_book_rows(
                         row_idx, row, cols, cols_categorized, metadata
                     )
 
-def parish_output_path(parish_id, output_dir):
+def parish_output_path(parish_id, output_dir: Path):
     return output_dir / f"{parish_id}_migration_events.jsonl"

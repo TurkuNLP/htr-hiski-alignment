@@ -23,7 +23,7 @@ class DuplicateConfig:
     dtype: score matrix dtype passed to rapidfuzz.process.cdist.
     """
 
-    max_year_diff: int = 10
+    max_year_diff: int = 0
     valid_year_prediction_bounds: tuple = (1500, 1980)
     allow_invalid_years: bool = True
     threshold: float = 0.6
@@ -35,6 +35,7 @@ class DuplicateConfig:
     min_info_count: int = 0
     join_char: str = ""
     n_workers: int = -1
+    row_data_column: str = "row_data"
     output_columns: tuple = (
         "row_data",
         "row_columns",
@@ -123,34 +124,6 @@ def build_valid_direction_pairs(
     }
 
 
-def build_page_records(
-    parish_df: pd.DataFrame, join_char: str = ""
-) -> list[dict]:
-    """
-    One record per (book, page_n, side). Each record carries the joined page
-    text and its character Counter, computed once and reused for every
-    comparison involving the page.
-    """
-    aggregated = parish_df.groupby(
-        ["book", "page_n", "side"], as_index=False
-    ).agg(
-        book_source=("book_source", "first"),
-        is_ap=("is_ap", "first"),
-        in_out=("in/out", "first"),
-        year_prediction=("year_prediction", "first"),
-        row_data_list=(
-            "row_data",
-            lambda x: list(chain.from_iterable(x)),
-        ),
-        row_indices=("row_data", lambda x: x.index.tolist()),
-    )
-    pages = aggregated.to_dict(orient="records")
-    for p in pages:
-        p["text"] = join_char.join(p["row_data_list"])
-        p["char_counter"] = Counter(p["text"])
-    return pages
-
-
 def group_pages_by_book(pages: list[dict]) -> dict[str, list[dict]]:
     book_to_pages: dict[str, list] = defaultdict(list)
     for p in pages:
@@ -177,7 +150,15 @@ def group_by_direction(
     return by_dir
 
 
-def build_page_records(parish_df: pd.DataFrame, join_char: str = "") -> list[dict]:
+def build_page_records(
+    parish_df: pd.DataFrame, config:DuplicateConfig, join_char: str = ""
+) -> list[dict]:
+    """
+    One record per (book, page_n, side). Each record carries the joined page
+    text and its character Counter, computed once and reused for every
+    comparison involving the page.
+    """
+    row_data_column = config.row_data_column
     aggregated = (
         parish_df.groupby(["book", "page_n", "side"], as_index=False)
         .agg(
@@ -187,7 +168,7 @@ def build_page_records(parish_df: pd.DataFrame, join_char: str = "") -> list[dic
             year_prediction=("year_prediction", "first"),
             info_count=("has_information", "sum"),  # count of rows with information
             row_data_list=(
-                "row_data",
+                row_data_column,
                 lambda x: list(chain.from_iterable(x)),
             ),
             row_indices=("row_data", lambda x: x.index.tolist()),
@@ -400,14 +381,18 @@ def process_parish(
 ) -> None:
     parish_df = load_parish_df(parish_jsonl)
     p_id = parish_df.loc[0, "parish_id"]
-    pages = build_page_records(parish_df, join_char=config.join_char)
+    pages = build_page_records(parish_df, config, join_char=config.join_char)
 
     matches = find_duplicate_pages(pages, config)
     parish_df = apply_duplicate_flags(
         parish_df, pages, matches, config.max_duplicate_of_entries
     )
+    output_columns = list(config.output_columns)
+    if config.row_data_column == "row_data_filled":
+        output_columns.append("row_data_filled")
+
     write_parish_jsonl(
         parish_df,
         Path(output_dir) / f"{p_id}_migration_events.jsonl",
-        output_columns=list(config.output_columns),
+        output_columns=output_columns,
     )

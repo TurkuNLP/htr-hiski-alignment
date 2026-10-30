@@ -73,6 +73,10 @@ def parse_args():
         "--allow-unknown-directions",
         action="store_true"
     )
+    parser.add_argument(
+        "--use-filled-values",
+        action="store_true"
+    )
 
     return parser.parse_args()
 
@@ -86,8 +90,9 @@ MAX_YEAR_DIFFERENCE = args.max_year_difference
 MIN_INFO_COUNT = args.min_info_count
 VALID_YEAR_BOUNDS = (args.min_year, args.max_year)
 JOIN_CHAR = args.join_char
-ALLOW_INVALID_YEARS=args.allow_invalid_years
-ALLOW_UNKNOWN_DIRECTIONS=args.allow_unknown_directions
+ALLOW_INVALID_YEARS = args.allow_invalid_years
+ALLOW_UNKNOWN_DIRECTIONS = args.allow_unknown_directions
+USE_FILLED_VALUES = args.use_filled_values
 
 # Load data
 book_migration_directions = pd.read_csv(
@@ -107,8 +112,10 @@ config = DuplicateConfig(
     allow_unknown_directions=ALLOW_UNKNOWN_DIRECTIONS,
     min_info_count=MIN_INFO_COUNT,
     join_char=JOIN_CHAR,
+    row_data_column="row_data_filled" if USE_FILLED_VALUES else "row_data"
 )
 
+OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 for parish_jsonl in tqdm(jsonls):
     process_parish(
         parish_jsonl,
