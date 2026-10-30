@@ -166,7 +166,7 @@ def iter_book_rows(
                 ).get(side, [])
                 metadata = {
                     "year_prediction": int(year),
-                    "file_path": file_path.replace(csv_data_directory, ""),
+                    "file_path": str(file_path).replace(str(csv_data_directory), ""),
                     "parish_id": parish_id,
                     "book": book,
                     "print_type": print_type,

@@ -7,9 +7,10 @@ from src.csv_pages_to_names import read_files
 from collections import defaultdict
 from tqdm.cli import tqdm
 from src.extract_migrations_with_metadata.extract_from_row_columns import(
-    get_possibly_related_toponyms,
-    get_possible_name,
-    get_has_information
+    build_row,
+    gather_file_paths,
+    parish_output_path,
+    parse_book_name
 )
 import json
 
@@ -90,78 +91,12 @@ GATHER_COLUMNS = [
     "img_range_end",
 ]
 
-def parse_book_name(book):
-    doctype = next((s for s in BOOK_TYPE_SEPARATORS if s in book), None)
-    if doctype is None:
-        raise ValueError(f"Unrecognized book name: {book}")
-    prefix, suffix = book.split(doctype)
-    parish = prefix[:-1]
-    years, source = suffix.split("_")[1:3]
-    year_start, year_end = years.split("-")
-    return doctype, parish, source.lower(), year_start, year_end
-
-def find_book_files(book, source, side, img_range_start, img_range_end):
-    doctype, parish, _, year_start, year_end = parse_book_name(book)
-    book_dir = (
-        Path(CSV_DATA_DIRECTORY)
-        / parish
-        / f"{doctype}_{year_start}-{year_end}_{source}"
-    )
-    image_range = range(img_range_start, img_range_end + 1)
-    found_files = natsorted(map(str, book_dir.glob(f"*{side}*.csv")))
-    return [
-        path for path in found_files if int(path.split("_")[-3]) in image_range
-    ]
-
-def gather_file_paths(book_migration_metadata):
-    all_file_paths = defaultdict(lambda: defaultdict(lambda: defaultdict(list)))
-    rows = book_migration_metadata[GATHER_COLUMNS].to_records(index=False)
-    for source, book, side, in_out, start, end in tqdm(rows):
-        all_file_paths[book][f"{start}-{end}"][in_out] += find_book_files(
-            book, source, side, start, end
-        )
-    return all_file_paths
-
-all_file_paths = gather_file_paths(book_migration_metadata)
-
-## Make JSONL files
-
-BOOK_TYPE_SEPARATORS = ("muuttaneet", "sekalaiset")
-
-def parish_output_path(parish_id):
-    return OUTPUT_DIR / f"{parish_id}_migration_events.jsonl"
-
-def parse_book_name(book):
-    separator = next((s for s in BOOK_TYPE_SEPARATORS if s in book), None)
-    if separator is None:
-        raise ValueError(f"Unrecognized book name: {book}")
-    prefix, suffix = book.split(separator)
-    parish = prefix[:-1]
-    years, source = suffix.split("_")[1:3]
-    year_start, year_end = years.split("-")
-    return parish, source.lower(), year_start, year_end
-
-def get_columns(print_type, side):
-    cols = print_type_and_side_to_cols.get(print_type, {}).get(side, [])
-    cols_categorized = print_type_and_side_to_categorized_cols.get(
-        print_type, {}
-    ).get(side, [])
-    return cols, cols_categorized
-
-def build_row(row_idx, row, cols, cols_categorized, metadata):
-    row_writing = row[0]
-    return {
-        "row_data": row_writing,
-        "row_columns": cols,
-        "row_columns_categorized": cols_categorized,
-        "possible_name": get_possible_name(row_writing, cols_categorized),
-        "possibly_related_toponyms": get_possibly_related_toponyms(
-            row_writing, cols_categorized
-        ),
-        "file_row": row_idx,
-        "has_information": get_has_information(row_writing, threshold=4),
-        **metadata,
-    }
+all_file_paths = gather_file_paths(
+    csv_data_directory=CSV_DATA_DIRECTORY,
+    book_migration_metadata=BOOKS_METADATA,
+    gather_columns=GATHER_COLUMNS,
+    book_type_separators=BOOK_TYPE_SEPARATORS
+)
 
 book_to_print_type = (
     book_migration_metadata[
@@ -187,8 +122,17 @@ parish_to_parish_id = (
     .to_dict()
 )
 
+def get_columns(print_type, side):
+    cols = print_type_and_side_to_cols.get(print_type, {}).get(side, [])
+    cols_categorized = print_type_and_side_to_categorized_cols.get(
+        print_type, {}
+    ).get(side, [])
+    return cols, cols_categorized
+
 def iter_book_rows(book, image_ranges):
-    parish, book_source, year_start, year_end = parse_book_name(book)
+    parish, book_source, year_start, year_end = parse_book_name(
+        book, BOOK_TYPE_SEPARATORS
+    )
     parish_id = parish_to_parish_id[parish]
 
     for image_range, directions in image_ranges.items():
