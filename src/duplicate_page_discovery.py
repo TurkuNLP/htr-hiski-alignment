@@ -54,6 +54,7 @@ class DuplicateConfig:
         "side",
         "parish_id",
         "book",
+        "doctype",
         "print_type",
         "book_source",
         "image_range_start",

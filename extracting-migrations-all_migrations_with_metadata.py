@@ -18,7 +18,7 @@ argparser = argparse.ArgumentParser()
 argparser.add_argument("-b", "--books")
 argparser.add_argument("-y", "--year-predictions")
 argparser.add_argument("-m", "--books-metadata")
-argparser.add_argument("-o", "--output")
+argparser.add_argument("-o", "--output-dir")
 args = argparser.parse_args()
 
 # "outputs/csv/migration-data-table_fix/"
@@ -26,9 +26,9 @@ CSV_DATA_DIRECTORY = args.books
 # "outputs/csv/year_predictions_extended.csv"
 YEAR_PREDICTIONS = args.year_predictions
 # "outputs/csv/migration_books_metadata.csv"
-BOOKS_METADATA = args.books_metadata
+BOOKS_METADATA_FILE = args.books_metadata
 # "outputs/json/all_migration_events_parish_splits"
-OUTPUT_DIR = Path(args.output)
+OUTPUT_DIR = Path(args.output_dir)
 
 
 # Metadata
@@ -36,7 +36,7 @@ OUTPUT_DIR = Path(args.output)
 ## General
 
 event_year_df = pd.read_csv(YEAR_PREDICTIONS)
-book_migration_metadata = pd.read_csv(BOOKS_METADATA)
+book_migration_metadata = pd.read_csv(BOOKS_METADATA_FILE)
 
 book_migration_metadata["book"] = (
     book_migration_metadata["parish_normalized"].astype(str)
@@ -93,7 +93,7 @@ GATHER_COLUMNS = [
 
 all_file_paths = gather_file_paths(
     csv_data_directory=CSV_DATA_DIRECTORY,
-    book_migration_metadata=BOOKS_METADATA,
+    book_migration_metadata=book_migration_metadata,
     gather_columns=GATHER_COLUMNS,
     book_type_separators=BOOK_TYPE_SEPARATORS
 )
@@ -130,7 +130,7 @@ def get_columns(print_type, side):
     return cols, cols_categorized
 
 def iter_book_rows(book, image_ranges):
-    parish, book_source, year_start, year_end = parse_book_name(
+    doctype, parish, book_source, year_start, year_end = parse_book_name(
         book, BOOK_TYPE_SEPARATORS
     )
     parish_id = parish_to_parish_id[parish]
@@ -152,6 +152,7 @@ def iter_book_rows(book, image_ranges):
                     "file_path": file_path.replace(CSV_DATA_DIRECTORY, ""),
                     "parish_id": parish_id,
                     "book": book,
+                    "doctype": doctype,
                     "print_type": print_type,
                     "book_source": book_source,
                     "book_year_start": year_start,
@@ -169,7 +170,7 @@ def iter_book_rows(book, image_ranges):
 
 OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 for parish_id in parish_to_parish_id.values():
-    parish_output_path(parish_id).write_text("")
+    parish_output_path(parish_id, output_dir=OUTPUT_DIR).write_text("")
 
 for book, image_ranges in tqdm(list(all_file_paths.items())):
     lines_by_parish = {}
@@ -178,5 +179,5 @@ for book, image_ranges in tqdm(list(all_file_paths.items())):
             json.dumps(row, ensure_ascii=False) + "\n"
         )
     for parish_id, lines in lines_by_parish.items():
-        with open(parish_output_path(parish_id), "a") as fp:
+        with open(parish_output_path(parish_id, output_dir=OUTPUT_DIR), "a") as fp:
             fp.writelines(lines)

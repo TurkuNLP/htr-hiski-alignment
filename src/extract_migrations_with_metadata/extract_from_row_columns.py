@@ -169,6 +169,7 @@ def iter_book_rows(
                     "file_path": str(file_path).replace(str(csv_data_directory), ""),
                     "parish_id": parish_id,
                     "book": book,
+                    "doctype": doctype,
                     "print_type": print_type,
                     "book_source": book_source,
                     "book_year_start": year_start,
