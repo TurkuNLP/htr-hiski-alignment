@@ -5,11 +5,11 @@ echo "Combining events with metadata"
     --books "outputs/csv/migration-data-table_fix/" \
     --year-predictions "outputs/csv/year_predictions_extended.csv" \
     --books-metadata "outputs/csv/migration_books_metadata.csv" \
-    --output-dir "outputs/json/migration_jsonls/0-with-metadata/"
+    --output-dir "outputs/json/migration_jsonls/0-with-metadata"
 
 echo "Finding duplicates"
 ./extracting-migrations-overlap_discovery.py \
-    --input-dir "outputs/json/migration_jsonls/0-with-metadata/" \
+    --input-dir "outputs/json/migration_jsonls/0-with-metadata" \
     --output-dir "outputs/json/migration_jsonls/1-with-duplicate-info" \
     --scorer "ratio" \
     --scorer-threshold 75 \

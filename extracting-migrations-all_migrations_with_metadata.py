@@ -106,7 +106,7 @@ book_to_print_type = (
     ].set_index(["book", "in_out"])["print"].to_dict()
 )
 
-book_page_side_to_year = event_year_df[~(event_year_df["book_id"] == 0)]
+book_page_side_to_year = event_year_df#event_year_df[~(event_year_df["book_id"] == 0)]
 book_page_side_to_year["key"] = (
     book_page_side_to_year["book"].astype(str)
     + "/" + book_page_side_to_year["page"].astype(str)

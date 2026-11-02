@@ -4,7 +4,7 @@ from pathlib import Path
 from tqdm.cli import tqdm
 from src.csv_pages_to_names import read_files
 
-BOOK_TYPE_SEPARATORS = ("muuttaneet", "sekalaiset")
+BOOK_TYPE_SEPARATORS = ("muuttaneet", "muuttokirjoja", "sekalaiset")
 GATHER_COLUMNS = [
     "source",
     "book",
@@ -35,7 +35,7 @@ def find_book_files(
     img_range_end,
     book_type_separators=BOOK_TYPE_SEPARATORS,
 ):
-    doctype, parish, _, year_start, year_end = parse_book_name(
+    doctype, parish, book_source, year_start, year_end = parse_book_name(
         book, book_type_separators
     )
     book_dir = (
@@ -44,7 +44,12 @@ def find_book_files(
         / f"{doctype}_{year_start}-{year_end}_{source}"
     )
     image_range = range(img_range_start, img_range_end + 1)
-    found_files = natsorted(map(str, book_dir.glob(f"*{side}*.csv")))
+
+    if side == "both":
+        side_to_find = ""
+    else:
+        side_to_find = side
+    found_files = natsorted(map(str, book_dir.glob(f"*{side_to_find}*.csv")))
     return [
         path for path in found_files if int(path.split("_")[-3]) in image_range
     ]
