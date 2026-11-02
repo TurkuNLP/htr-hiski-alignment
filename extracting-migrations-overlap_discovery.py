@@ -95,9 +95,7 @@ ALLOW_UNKNOWN_DIRECTIONS = args.allow_unknown_directions
 USE_FILLED_VALUES = args.use_filled_values
 
 # Load data
-book_migration_directions = pd.read_csv(
-    "outputs/csv/book_migration_direction_info.csv"
-)
+
 with open("outputs/json/book_ids.json", "r") as fp:
     book_id_to_info = json.load(fp)
 
