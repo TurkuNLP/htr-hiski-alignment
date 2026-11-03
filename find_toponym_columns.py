@@ -173,7 +173,20 @@ MIN_SCORE = 60
 GAP_THRESHOLD = 10
 MAX_MEAN_N_WORDS = 3.0
 MIN_MEAN_VALUE_LEN = 2.5
-VALUES_TO_FILL = {'"', '-"-' '-"', '"-', "1o", "2o", "2i", "do", "Do", "jo", "J"}
+VALUES_TO_FILL = {
+    '"',
+    '-"-',
+    '-"',
+    '"-',
+    "1o",
+    "2o",
+    "2i",
+    "do",
+    "Do",
+    'Dito',
+    "jo",
+    "J",
+}
 MARITAL_STATUS_SCORE_THRESHOLD = 75
 MONTH_SCORE_THRESHOLD = 75
 OUTPUT_COLUMNS = [
@@ -232,8 +245,8 @@ for events_json in tqdm(jsons):
     )
 
     n_rows = len(events)
-    found_toponym_columns_col    = [None] * n_rows
-    row_data_filled_col          = [None] * n_rows
+    found_toponym_columns_col = [None] * n_rows
+    row_data_filled_col = [None] * n_rows
     possibly_related_toponyms_col = [None] * n_rows
 
     index_to_pos = {idx: pos for pos, idx in enumerate(events.index)}
@@ -323,8 +336,8 @@ for events_json in tqdm(jsons):
             row_data_filled_col[pos] = row_data_filled
             possibly_related_toponyms_col[pos] = possibly_related_toponyms
 
-    events["found_toponym_columns"]    = found_toponym_columns_col
-    events["row_data_filled"]          = row_data_filled_col
+    events["found_toponym_columns"] = found_toponym_columns_col
+    events["row_data_filled"] = row_data_filled_col
     events["possibly_related_toponyms"] = possibly_related_toponyms_col
     events = events.drop(columns=["possible_name"])
 
