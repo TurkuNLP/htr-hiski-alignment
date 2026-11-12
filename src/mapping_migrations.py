@@ -608,7 +608,7 @@ def draw_static_migration_map(
 def prepare_plot_events(
     migrations: pd.DataFrame,
     migration_kind: str | None = None,
-    year_bins: list | None = YEAR_BINS,
+    year_bins: list = YEAR_BINS,
 ) -> pd.DataFrame:
     """Keep one kind of migration with valid years and coordinates.
 
@@ -637,10 +637,14 @@ def prepare_plot_events(
             right=False,
             labels=year_bins[:-1],
         )
+
     return plot_events
 
 
-def build_yearly_routes(plot_events: pd.DataFrame) -> pd.DataFrame:
+def build_yearly_routes(
+    plot_events: pd.DataFrame,
+    min_events_per_route: int = 1
+) -> pd.DataFrame:
     """Count events per (year bin, route) and assign each route to a count bin."""
     yearly_routes = (
         plot_events.groupby(
@@ -653,6 +657,9 @@ def build_yearly_routes(plot_events: pd.DataFrame) -> pd.DataFrame:
         yearly_routes["origin_longitude"] == yearly_routes["target_longitude"]
     ) & (yearly_routes["origin_latitude"] == yearly_routes["target_latitude"])
     yearly_routes = yearly_routes[~is_zero_length_route].copy()
+    yearly_routes = yearly_routes[
+        yearly_routes["count"] >= min_events_per_route
+    ].copy()
 
     yearly_routes["count_bin"] = pd.cut(
         yearly_routes["count"], bins=COUNT_BIN_EDGES, labels=False
@@ -702,9 +709,14 @@ def build_route_traces(
 ) -> list:
     routes_in_year = yearly_routes[yearly_routes[YEAR_BIN_COLUMN] == year]
     arrow_point_index = int(ARROW_POSITION * (POINTS_PER_ARC - 1))
+
+    prev_index = max(0, arrow_point_index - 1)
+    next_index = max(1, arrow_point_index)
+
     points_with_gap = (
         POINTS_PER_ARC + 1
     )  # one None per route separates the lines
+    longitude_scale = np.cos(np.radians(FINLAND_CENTRE_LATITUDE))
 
     route_traces = []
     for bin_index in range(COUNT_BIN_COUNT):
@@ -720,10 +732,19 @@ def build_route_traces(
         )
         longitude_path[:, :POINTS_PER_ARC] = arcs[:, :, 0]
         latitude_path[:, :POINTS_PER_ARC] = arcs[:, :, 1]
+        dlon = (
+            arcs[:, next_index, 0] - arcs[:, prev_index, 0]
+        ) * longitude_scale
+        dlat = arcs[:, next_index, 1] - arcs[:, prev_index, 1]
 
+        tangent_angles = np.degrees(np.arctan2(dlon, dlat))
+        
         # Only one point per route gets a visible marker: the arrowhead
         arrow_sizes = np.zeros((route_count, points_with_gap))
         arrow_sizes[:, arrow_point_index] = 6 + 2 * bin_index
+
+        arrow_angles = np.zeros((route_count, points_with_gap))
+        arrow_angles[:, arrow_point_index] = tangent_angles
 
         route_traces.append(
             go.Scattergeo(
@@ -737,7 +758,7 @@ def build_route_traces(
                 marker=dict(
                     symbol="arrow",
                     size=arrow_sizes.ravel(),
-                    angleref="previous",
+                    angle=arrow_angles.ravel(),
                     color=COUNT_BIN_COLORS[bin_index],
                 ),
                 opacity=0.6,
@@ -836,7 +857,7 @@ def build_migration_figure(
     )
     title = (
         f"{migration_dir_in_title} between parishes in Finland "
-        + "({source_description})"
+        + f"({source_description})"
     )
     migration_figure.update_layout(
         width=900,
