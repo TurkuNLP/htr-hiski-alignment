@@ -44,18 +44,16 @@ YEAR_BINS = list(range(1820, 1926, 5))
 YEAR_BIN_COLUMN = "year_bin"
 
 # Counts are binned so each bin is one trace (a trace can only have one line colour)
-COUNT_BIN_EDGES = [0, 5, 20, 50, 100, 200, np.inf]
+# COUNT_BIN_EDGES = [0, 5, 20, 50, 100, 200, np.inf]
+COUNT_BIN_EDGES = [0, 10, 20, 30, 40, 50, np.inf]
+COUNT_BIN_COUNT = len(COUNT_BIN_EDGES) - 1
 COUNT_BIN_LABELS = [
-    "(0, 5]",
-    "(5, 20]",
-    "(20, 50]",
-    "(50, 100]",
-    "(100, 200]",
-    "> 200",
+    f"({COUNT_BIN_EDGES[i]}, {COUNT_BIN_EDGES[i + 1]}]" if i < COUNT_BIN_COUNT - 1
+    else f"> {COUNT_BIN_EDGES[i]}"
+    for i in range(COUNT_BIN_COUNT)
 ]
-COUNT_BIN_COUNT = len(COUNT_BIN_LABELS)
 COUNT_BIN_COLORS = sample_colorscale(
-    "Viridis", np.linspace(0, 1, COUNT_BIN_COUNT)
+    "Bluered", np.linspace(0, 1, COUNT_BIN_COUNT)
 )
 COUNT_BIN_LINE_WIDTHS = np.linspace(0.8, 4, COUNT_BIN_COUNT)
 
@@ -64,6 +62,17 @@ ARC_BEND = 0.15  # sideways offset as a fraction of route length; 0 gives straig
 ARROW_POSITION = (
     0.6  # how far along the arc the arrowhead sits (0 = origin, 1 = target)
 )
+
+GRADIENT_CHUNK_COUNT = (
+    6  # opacity steps along each route; more is smoother but adds traces
+)
+SEGMENTS_PER_CHUNK = 4  # keeps each chunk looking curved
+GRADIENT_ARC_POINTS = GRADIENT_CHUNK_COUNT * SEGMENTS_PER_CHUNK + 1
+
+MIN_GRADIENT_OPACITY = 0.25
+MAX_GRADIENT_OPACITY = 0.5
+MIN_ARC_WIDTH = 0.25
+MAX_ARC_WIDTH = 0.75
 
 
 # ---------------------------------------------------------------------------
@@ -356,6 +365,102 @@ def normalize_toponym(
 # ---------------------------------------------------------------------------
 
 
+def most_common_name(place_names: pd.Series) -> str | None:
+    name_counts = place_names.dropna().value_counts()
+    return name_counts.index[0] if len(name_counts) > 0 else None
+
+
+def cluster_places_by_radius(
+    place_table: pd.DataFrame, radius_km: float
+) -> pd.DataFrame:
+    # Project back to EPSG:3067 so distances are in real metres
+    eastings, northings = EPSG3067_TO_WGS84.transform(
+        place_table["longitude"].to_numpy(),
+        place_table["latitude"].to_numpy(),
+        direction="INVERSE",
+    )
+    eastings = np.asarray(eastings)
+    northings = np.asarray(northings)
+    radius_metres = radius_km * 1000
+
+    busiest_first = np.argsort(
+        -place_table["event_count"].to_numpy(), kind="stable"
+    )
+    region_centre_position = np.full(len(place_table), -1)
+    for centre_position in busiest_first:
+        if region_centre_position[centre_position] != -1:
+            continue
+        is_unassigned = region_centre_position == -1
+        distances_to_centre = np.hypot(
+            eastings - eastings[centre_position],
+            northings - northings[centre_position],
+        )
+        is_within_radius = is_unassigned & (
+            distances_to_centre <= radius_metres
+        )
+        region_centre_position[is_within_radius] = centre_position
+
+    region_centres = place_table.iloc[region_centre_position]
+    region_table = place_table.copy()
+    region_table["region_longitude"] = region_centres["longitude"].to_numpy()
+    region_table["region_latitude"] = region_centres["latitude"].to_numpy()
+    region_table["region_name"] = region_centres["place_name"].to_numpy()
+    return region_table
+
+
+def aggregate_regions(
+    plot_events: pd.DataFrame, radius_km: float = 0.0
+) -> pd.DataFrame:
+    """Snap origins and targets to the centre of the region they fall in."""
+    if radius_km <= 0:
+        return plot_events
+
+    region_events = plot_events.copy()
+    endpoint_places = pd.concat(
+        [
+            region_events[
+                [
+                    f"{node_role}_longitude",
+                    f"{node_role}_latitude",
+                    f"{node_role}_name",
+                ]
+            ].set_axis(["longitude", "latitude", "place_name"], axis=1)
+            for node_role in ("origin", "target")
+        ],
+        ignore_index=True,
+    )
+    place_table = (
+        endpoint_places.groupby(["longitude", "latitude"])
+        .agg(
+            event_count=("place_name", "size"),
+            place_name=("place_name", most_common_name),
+        )
+        .reset_index()
+    )
+    region_table = cluster_places_by_radius(place_table, radius_km)
+    print(
+        f"{len(region_table)} places merged into "
+        f"{region_table['region_name'].nunique()} regions (radius {radius_km} km)"
+    )
+
+    region_by_place = region_table.set_index(["longitude", "latitude"])
+    for node_role in ("origin", "target"):
+        place_index = pd.MultiIndex.from_frame(
+            region_events[[f"{node_role}_longitude", f"{node_role}_latitude"]]
+        )
+        regions_of_endpoints = region_by_place.reindex(place_index)
+        region_events[f"{node_role}_longitude"] = regions_of_endpoints[
+            "region_longitude"
+        ].to_numpy()
+        region_events[f"{node_role}_latitude"] = regions_of_endpoints[
+            "region_latitude"
+        ].to_numpy()
+        region_events[f"{node_role}_name"] = regions_of_endpoints[
+            "region_name"
+        ].to_numpy()
+    return region_events
+
+
 def convert_to_longitude_latitude(
     eastings: pd.Series, northings: pd.Series
 ) -> tuple[pd.Series, pd.Series]:
@@ -609,6 +714,7 @@ def prepare_plot_events(
     migrations: pd.DataFrame,
     migration_kind: str | None = None,
     year_bins: list = YEAR_BINS,
+    region_radius_km: float = 0.0,
 ) -> pd.DataFrame:
     """Keep one kind of migration with valid years and coordinates.
 
@@ -626,7 +732,9 @@ def prepare_plot_events(
         np.isfinite(plot_events[ROUTE_COORDINATE_COLUMNS]).all(axis=1)
     ]
     plot_events["year"] = plot_events["year"].astype(int)
-    plot_events = plot_events[plot_events["year"] > 0].copy()
+    plot_events = plot_events[plot_events["year"] > 0]
+
+    plot_events = aggregate_regions(plot_events, region_radius_km)
 
     if year_bins is None:
         plot_events[YEAR_BIN_COLUMN] = plot_events["year"]
@@ -642,8 +750,7 @@ def prepare_plot_events(
 
 
 def build_yearly_routes(
-    plot_events: pd.DataFrame,
-    min_events_per_route: int = 1
+    plot_events: pd.DataFrame, min_events_per_route: int = 1
 ) -> pd.DataFrame:
     """Count events per (year bin, route) and assign each route to a count bin."""
     yearly_routes = (
@@ -667,10 +774,11 @@ def build_yearly_routes(
     return yearly_routes
 
 
-def compute_arcs(routes: pd.DataFrame) -> np.ndarray:
+def compute_arcs(
+    routes: pd.DataFrame, point_count: int = POINTS_PER_ARC
+) -> np.ndarray:
     """
     Quadratic Bezier arcs that bend to the right of the direction of travel.
-    Shape: (routes, points, 2).
     """
     # Work in a space where one unit of longitude is as long as one unit of latitude
     longitude_scale = np.cos(np.radians(FINLAND_CENTRE_LATITUDE))
@@ -692,7 +800,7 @@ def compute_arcs(routes: pd.DataFrame) -> np.ndarray:
     )
     control_points = (origins + targets) / 2 + ARC_BEND * right_hand_normals
 
-    fractions = np.linspace(0, 1, POINTS_PER_ARC)[None, :, None]
+    fractions = np.linspace(0, 1, point_count)[None, :, None]
     arcs = (
         (1 - fractions) ** 2 * origins[:, None, :]
         + 2 * (1 - fractions) * fractions * control_points[:, None, :]
@@ -738,7 +846,7 @@ def build_route_traces(
         dlat = arcs[:, next_index, 1] - arcs[:, prev_index, 1]
 
         tangent_angles = np.degrees(np.arctan2(dlon, dlat))
-        
+
         # Only one point per route gets a visible marker: the arrowhead
         arrow_sizes = np.zeros((route_count, points_with_gap))
         arrow_sizes[:, arrow_point_index] = 6 + 2 * bin_index
@@ -761,12 +869,74 @@ def build_route_traces(
                     angle=arrow_angles.ravel(),
                     color=COUNT_BIN_COLORS[bin_index],
                 ),
-                opacity=0.6,
+                opacity=0.75,
                 name=count_bin_labels[bin_index],
                 legendgroup=count_bin_labels[bin_index],
                 hoverinfo="skip",
             )
         )
+    return route_traces
+
+
+def with_opacity(rgb_color: str, opacity: float) -> str:
+    """Convert rgb color string to an rgba color string."""
+    rgba = rgb_color.replace("rgb(", "rgba(")
+    rgba = rgba.replace(")", f", {opacity:.3f})")
+    return rgba
+
+
+def build_gradient_route_traces(
+    yearly_routes: pd.DataFrame,
+    year: int,
+    count_bin_labels: list = COUNT_BIN_LABELS,
+) -> list:
+    """Line traces whose opacity rises from the origin to the target.
+
+    One trace per (count bin, chunk), ordered bin by bin.
+    """
+    routes_in_year = yearly_routes[yearly_routes[YEAR_BIN_COLUMN] == year]
+
+    chunk_opacities = np.linspace(
+        MIN_GRADIENT_OPACITY, MAX_GRADIENT_OPACITY, GRADIENT_CHUNK_COUNT
+    )
+    chunk_widths = np.linspace(
+        MIN_ARC_WIDTH, MAX_ARC_WIDTH, GRADIENT_CHUNK_COUNT
+    )
+
+    route_traces = []
+    for bin_index in range(COUNT_BIN_COUNT):
+        bin_routes = routes_in_year[routes_in_year["count_bin"] == bin_index]
+        arcs = compute_arcs(bin_routes, GRADIENT_ARC_POINTS)
+        route_count = len(bin_routes)
+        gap_between_routes = np.full((route_count, 1, 2), np.nan)
+
+        for chunk_index, (chunk_opacity, chunk_width) in enumerate(
+            zip(chunk_opacities, chunk_widths)
+        ):
+            first_point = chunk_index * SEGMENTS_PER_CHUNK
+            chunk_points = arcs[
+                :, first_point : first_point + SEGMENTS_PER_CHUNK + 1, :
+            ]
+            separated_points = np.concatenate(
+                [chunk_points, gap_between_routes], axis=1
+            ).reshape(-1, 2)
+
+            route_traces.append(
+                go.Scattergeo(
+                    lon=separated_points[:, 0],
+                    lat=separated_points[:, 1],
+                    mode="lines",
+                    line=dict(
+                        width=COUNT_BIN_LINE_WIDTHS[bin_index] * chunk_width,
+                        color=with_opacity(
+                            COUNT_BIN_COLORS[bin_index], chunk_opacity
+                        ),
+                    ),
+                    name=count_bin_labels[bin_index],
+                    legendgroup=count_bin_labels[bin_index],
+                    hoverinfo="skip",
+                )
+            )
     return route_traces
 
 
@@ -811,24 +981,32 @@ def build_migration_figure(
     migration_kind: str,
     source_description: str = "",
     count_bin_labels: list = COUNT_BIN_LABELS,
+    use_gradient: bool = False,
 ) -> go.Figure:
     if len(count_bin_labels) != COUNT_BIN_COUNT:
         raise ValueError(f"count_bin_labels needs {COUNT_BIN_COUNT} entries")
 
     years = sorted(yearly_routes[YEAR_BIN_COLUMN].unique())
 
+    def build_traces(year):
+        if use_gradient:
+            return build_gradient_route_traces(
+                yearly_routes, year, count_bin_labels
+            )
+        return build_route_traces(yearly_routes, year, count_bin_labels)
+
+    first_year_traces = build_traces(years[0])
     animation_frames = [
         go.Frame(
-            data=build_route_traces(yearly_routes, year, count_bin_labels),
+            data=build_traces(year),
             name=str(year),
-            traces=list(range(COUNT_BIN_COUNT)),
+            traces=list(range(len(first_year_traces))),
         )
         for year in years
     ]
 
     migration_figure = go.Figure(
-        data=build_route_traces(yearly_routes, years[0], count_bin_labels)
-        + [build_colorbar_trace(count_bin_labels)],
+        data=first_year_traces + [build_colorbar_trace(count_bin_labels)],
         frames=animation_frames,
     )
 
@@ -954,3 +1132,46 @@ def count_unmatched_names(located_records: pd.DataFrame) -> pd.Series:
     return located_records.loc[
         is_unmatched, "counterpart_raw_name"
     ].value_counts()
+
+# ---------------------------------------------------------------------------
+# Exporting
+# ---------------------------------------------------------------------------
+
+def render_frame_images(
+    migration_figure: go.Figure,
+    output_dir: Path,
+    width: int = 600,
+    height: int = 800,
+    scale: float = 1,
+) -> list[str]:
+    """Write one PNG per animation frame, with the year slider at the frame's position."""
+    output_dir.mkdir(parents=True, exist_ok=True)
+    # The colorbar trace is appended after the route traces, so frames never touch it
+    colorbar_trace = migration_figure.data[-1]
+
+    image_paths = []
+    for frame_index, animation_frame in enumerate(tqdm(migration_figure.frames)):
+        frame_figure = go.Figure(
+            data=list(animation_frame.data) + [colorbar_trace],
+            layout=migration_figure.layout,  # copied, so the original is untouched
+        )
+        frame_figure.layout.sliders[0].active = frame_index
+
+        image_path = output_dir / f"frame_{frame_index:04d}.png"
+        frame_figure.write_image(image_path, width=width, height=height, scale=scale)
+        image_paths.append(str(image_path))
+    return image_paths
+
+
+def write_video(
+    image_paths: list[str], video_path: Path, frames_per_second: float = 2
+) -> None:
+    from moviepy import ImageSequenceClip
+
+    video_clip = ImageSequenceClip(image_paths, fps=frames_per_second)
+    video_clip.write_videofile(
+        str(video_path),
+        codec="libx264",
+        # yuv420p makes the file play in QuickTime, PowerPoint and browsers
+        ffmpeg_params=["-pix_fmt", "yuv420p"],
+    )
