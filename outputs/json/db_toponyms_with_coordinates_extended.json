@@ -474,6 +474,11 @@
         "e": 278793.0,
         "n": 6656791.0
     },
+    "Bromarf": {
+        "normalized": "Bromarv",
+        "e": 278793.0,
+        "n": 6656791.0
+    },
     "Bruuhala": {
         "normalized": "Bruuhala",
         "e": null,
@@ -924,6 +929,11 @@
         "e": 276223.7458,
         "n": 6644739.9629
     },
+    "Hangö": {
+        "normalized": "Hanko",
+        "e": 274161.1988,
+        "n": 6638667.2791
+    },
     "Hankasalmi": {
         "normalized": "Hankasalmi",
         "e": 470848.0,
@@ -1169,12 +1179,22 @@
         "e": 388404.0,
         "n": 6671584.0
     },
+    "HelsinkiHelsinki": {
+        "normalized": "Helsinki",
+        "e": 388404.0,
+        "n": 6671584.0
+    },
     "Helsingfors": {
         "normalized": "Helsinki",
         "e": 388404.0,
         "n": 6671584.0
     },
     "Hellsingfors": {
+        "normalized": "Helsinki",
+        "e": 388404.0,
+        "n": 6671584.0
+    },
+    "Helsinkiin": {
         "normalized": "Helsinki",
         "e": 388404.0,
         "n": 6671584.0
@@ -1189,7 +1209,17 @@
         "e": 388404.0,
         "n": 6671584.0
     },
+    "H-fors": {
+        "normalized": "Helsinki",
+        "e": 388404.0,
+        "n": 6671584.0
+    },
     "Hfors": {
+        "normalized": "Helsinki",
+        "e": 388404.0,
+        "n": 6671584.0
+    },
+    "Hfors.": {
         "normalized": "Helsinki",
         "e": 388404.0,
         "n": 6671584.0
@@ -1379,6 +1409,11 @@
         "e": 419913.0,
         "n": 6762237.0
     },
+    "Hollolaan": {
+        "normalized": "Hollola",
+        "e": 419913.0,
+        "n": 6762237.0
+    },
     "Honkajoki": {
         "normalized": "Honkajoki",
         "e": 252271.0,
@@ -1519,6 +1554,11 @@
         "e": 362869.0,
         "n": 6765015.0
     },
+    "H:linna": {
+        "normalized": "Hämeenlinna",
+        "e": 362869.0,
+        "n": 6765015.0
+    },
     "T.hus": {
         "normalized": "Hämeenlinna",
         "e": 362869.0,
@@ -1615,6 +1655,11 @@
         "n": 7052442.3619
     },
     "Iitti": {
+        "normalized": "Iitti",
+        "e": 463368.0,
+        "n": 6750694.0
+    },
+    "Iittiin": {
         "normalized": "Iitti",
         "e": 463368.0,
         "n": 6750694.0
@@ -2909,6 +2954,11 @@
         "e": 594232.1339,
         "n": 6699823.4018
     },
+    "Kotka": {
+        "normalized": "Kotka",
+        "e": 497021.4194,
+        "n": 6703457.0199
+    },
     "Björkö": {
         "normalized": "Koivisto",
         "e": 594232.1339,
@@ -3393,6 +3443,11 @@
         "normalized": "Kökar",
         "e": 159216.0,
         "n": 6658848.0
+    },
+    "Lahti": {
+        "normalized": "Lahti",
+        "e": 427213,
+        "n": 6761349
     },
     "Laihia": {
         "normalized": "Laihia",
@@ -6924,6 +6979,11 @@
         "e": 386432.6323,
         "n": 6671947.2073
     },
+    "Viborg": {
+        "normalized": "Suomenlinna",
+        "e": 386432.6323,
+        "n": 6671947.2073
+    },
     "Viaporin linnoitusseurakunta": {
         "normalized": "Suomenlinna",
         "e": 386432.6323,
@@ -7174,6 +7234,11 @@
         "e": 329490.4153,
         "n": 6821372.4243
     },
+    "TampereTampere": {
+        "normalized": "Tampere",
+        "e": 329490.4153,
+        "n": 6821372.4243
+    },
     "Tammerfors": {
         "normalized": "Tampere",
         "e": 329490.4153,
@@ -7405,6 +7470,16 @@
         "n": 7409617.0
     },
     "Turku": {
+        "normalized": "Turku",
+        "e": 240517.367,
+        "n": 6710665.9695
+    },
+    "Turhu": {
+        "normalized": "Turku",
+        "e": 240517.367,
+        "n": 6710665.9695
+    },
+    "Turkuun": {
         "normalized": "Turku",
         "e": 240517.367,
         "n": 6710665.9695
@@ -7909,6 +7984,11 @@
         "e": 228380.0,
         "n": 7007298.0
     },
+    "Waasa": {
+        "normalized": "Vaasa",
+        "e": 228380.0,
+        "n": 7007298.0
+    },
     "Vasa": {
         "normalized": "Vaasa",
         "e": 228380.0,
@@ -7980,6 +8060,11 @@
         "n": 6773696.0
     },
     "Vanaja": {
+        "normalized": "Vanaja",
+        "e": 370803.0,
+        "n": 6767679.0
+    },
+    "Wanaja": {
         "normalized": "Vanaja",
         "e": 370803.0,
         "n": 6767679.0
