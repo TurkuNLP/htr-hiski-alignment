@@ -15,14 +15,14 @@ from src.toponym_column_detection import (
 
 def is_place_category(category: str) -> bool:
     return (
-        category== "place"
+        category == "place"
         or category.startswith("source")
         or category.startswith("destination")
     )
 
 
 def build_possibly_related_toponyms(
-    group_toponym_cols: list[tuple],   # [(col_idx, score), …]  — all found columns
+    group_toponym_cols: list[tuple],   # [(col_idx, score), …] — all found columns
     row_data_filled: list[str],
     row_columns_categorized: list[str],
 ) -> list[list]:
@@ -175,14 +175,17 @@ MAX_MEAN_N_WORDS = 3.0
 MIN_MEAN_VALUE_LEN = 2.5
 VALUES_TO_FILL = {
     '"',
+    "''"
     '-"-',
     '-"',
     '"-',
     "1o",
     "2o",
     "2i",
+    "\"Do",
     "do",
     "Do",
+    "Do."
     'Dito',
     "jo",
     "J",
@@ -224,13 +227,13 @@ output_dir.mkdir(parents=True, exist_ok=True)
 
 jsons = tuple(INPUT_DIR.glob("*.jsonl"))
 
-
 for events_json in tqdm(jsons):
-    events = pd.read_json(events_json, lines=True)
+    events = pd.read_json(events_json, lines=True, dtype=False)
+    events_with_info = events[events["has_information"] == True]
 
     all_values = tuple({
         value
-        for row in events["row_data"].to_list()
+        for row in events_with_info["row_data"].to_list()
         for value in row
     })
 
@@ -244,14 +247,14 @@ for events_json in tqdm(jsons):
         all_values, valid_marital_statuses, scorer=SCORER, score_cutoff=SCORE_CUTOFF, workers=-1
     )
 
-    n_rows = len(events)
+    n_rows = len(events_with_info)
     found_toponym_columns_col = [None] * n_rows
     row_data_filled_col = [None] * n_rows
     possibly_related_toponyms_col = [None] * n_rows
 
-    index_to_pos = {idx: pos for pos, idx in enumerate(events.index)}
+    index_to_pos = {idx: pos for pos, idx in enumerate(events_with_info.index)}
 
-    for (book, page_n, side, direction), group_df in events.groupby(
+    for (book, page_n, side, direction), group_df in events_with_info.groupby(
         ["book", "page_n", "side", "in/out"]
     ):
         group_row_data = group_df["row_data"].to_list()
@@ -260,14 +263,14 @@ for events_json in tqdm(jsons):
             fill_values(col, VALUES_TO_FILL) for col in group_cols
         ]
 
-        page_features = compute_column_features(
+        column_features = compute_column_features(
             filled_columns=group_cols_filled,
             toponym_scores=toponym_scores,
             month_scores=month_scores,
             marital_status_scores=marital_status_scores,
         )
         group_toponym_cols = find_toponym_columns(
-            page_features,
+            column_features,
             min_score=MIN_SCORE,
             gap_threshold=GAP_THRESHOLD,
             max_mean_n_words=MAX_MEAN_N_WORDS,
@@ -336,9 +339,15 @@ for events_json in tqdm(jsons):
             row_data_filled_col[pos] = row_data_filled
             possibly_related_toponyms_col[pos] = possibly_related_toponyms
 
-    events["found_toponym_columns"] = found_toponym_columns_col
-    events["row_data_filled"] = row_data_filled_col
-    events["possibly_related_toponyms"] = possibly_related_toponyms_col
+    events["found_toponym_columns"] = pd.Series(
+        found_toponym_columns_col, index=events_with_info.index
+    ).reindex(events.index)
+    events["row_data_filled"] = pd.Series(
+        row_data_filled_col, index=events_with_info.index
+    ).reindex(events.index)
+    events["possibly_related_toponyms"] = pd.Series(
+        possibly_related_toponyms_col, index=events_with_info.index
+    ).reindex(events.index)
     events = events.drop(columns=["possible_name"])
 
     output_filename = output_dir / f"{events_json.stem}.jsonl"

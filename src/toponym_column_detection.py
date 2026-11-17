@@ -46,23 +46,17 @@ def column_mean_value_len(column):
 
 def get_matches(
     queries, choices, scorer, score_cutoff, workers
-) -> dict[str, tuple[str, int]]:
+) -> dict[str, tuple[str, float]]:
     sim_m = rapidfuzz.process.cdist(
         queries, choices,
         scorer=scorer, score_cutoff=score_cutoff,
         workers=workers
     )
-    matches = {}
-    for i, value in enumerate(queries):
-        row = sim_m[i]
-        row_argmax = np.argmax(row)
-        toponym = choices[row_argmax]
-        score = row[row_argmax]
-        matches[value] = (
-            toponym if score > 0 else "", score
-        )
-
-    return matches
+    choices_arr = np.asarray(choices, dtype=object)
+    best_idx = sim_m.argmax(axis=1)
+    best_scores = sim_m[np.arange(sim_m.shape[0]), best_idx]
+    names = np.where(best_scores > 0, choices_arr[best_idx], "")
+    return dict(zip(queries, zip(names, best_scores)))
 
 
 # Column-level aggregation
