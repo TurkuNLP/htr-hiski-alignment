@@ -1,6 +1,7 @@
 #!/usr/bin/env python
 
 import argparse
+import numpy as np
 import pandas as pd
 import json
 import rapidfuzz
@@ -9,7 +10,7 @@ from tqdm.cli import tqdm
 
 from src.toponym_column_detection import (
     compute_column_features, fill_values, find_toponym_columns,
-    get_matches, transpose_page_table,
+    get_matches, get_matches_from_matrix, get_score_matrix, transpose_page_table,
 )
 
 
@@ -218,14 +219,18 @@ OUTPUT_COLUMNS = [
     "file_row",
 ]
 
-valid_toponyms = tuple(valid_toponyms)
-valid_months = tuple(valid_months)
-valid_marital_statuses = tuple(valid_marital_statuses)
+combined_valid = [*valid_toponyms, *valid_months, *valid_marital_statuses]
+n_top = len(valid_toponyms)
+n_month = len(valid_months)
+
+toponym_arr = np.asarray(list(valid_toponyms), dtype=object)
+month_arr = np.asarray(list(valid_months), dtype=object)
+marital_arr = np.asarray(list(valid_marital_statuses), dtype=object)
 
 output_dir = Path(OUTPUT_DIR)
 output_dir.mkdir(parents=True, exist_ok=True)
 
-jsons = tuple(INPUT_DIR.glob("*.jsonl"))
+jsons = sorted(INPUT_DIR.glob("*.jsonl"), key=lambda x: Path.stat(x).st_size, reverse=True)
 
 for events_json in tqdm(jsons):
     events = pd.read_json(events_json, lines=True, dtype=False)
@@ -237,15 +242,20 @@ for events_json in tqdm(jsons):
         for value in row
     })
 
-    toponym_scores = get_matches(
-        all_values, valid_toponyms, scorer=SCORER, score_cutoff=SCORE_CUTOFF, workers=-1
+    sim_m = rapidfuzz.process.cdist(
+        all_values,
+        combined_valid,
+        scorer=SCORER,
+        score_cutoff=SCORE_CUTOFF,
+        workers=-1,
+        dtype=np.float32,
     )
-    month_scores = get_matches(
-        all_values, valid_months, scorer=SCORER, score_cutoff=SCORE_CUTOFF, workers=-1
-    )
-    marital_status_scores = get_matches(
-        all_values, valid_marital_statuses, scorer=SCORER, score_cutoff=SCORE_CUTOFF, workers=-1
-    )
+
+    toponym_best = np.append(sim_m[:, :n_top].max(axis=1), np.float32(0.0))
+    month_best = np.append(sim_m[:, n_top:n_top + n_month].max(axis=1), np.float32(0.0))
+    marital_best = np.append(sim_m[:, n_top + n_month:].max(axis=1), np.float32(0.0))
+
+    value_pos = {v: i for i, v in enumerate(all_values)}
 
     n_rows = len(events_with_info)
     found_toponym_columns_col = [None] * n_rows
@@ -265,9 +275,10 @@ for events_json in tqdm(jsons):
 
         column_features = compute_column_features(
             filled_columns=group_cols_filled,
-            toponym_scores=toponym_scores,
-            month_scores=month_scores,
-            marital_status_scores=marital_status_scores,
+            value_pos=value_pos,
+            toponym_best=toponym_best,
+            month_best=month_best,
+            marital_best=marital_best,
         )
         group_toponym_cols = find_toponym_columns(
             column_features,

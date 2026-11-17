@@ -44,19 +44,25 @@ def column_mean_value_len(column):
     return sum(map(len, column)) / len(column)
 
 
-def get_matches(
-    queries, choices, scorer, score_cutoff, workers
-) -> dict[str, tuple[str, float]]:
-    sim_m = rapidfuzz.process.cdist(
+def get_score_matrix(queries, choices, scorer, score_cutoff, workers):
+    return rapidfuzz.process.cdist(
         queries, choices,
         scorer=scorer, score_cutoff=score_cutoff,
-        workers=workers
+        workers=workers,
+        dtype=np.float32
     )
-    choices_arr = np.asarray(choices, dtype=object)
-    best_idx = sim_m.argmax(axis=1)
+
+
+def get_matches_from_matrix(queries, sim_m, choices_arr):
+    best_idx = np.ascontiguousarray(sim_m).argmax(axis=1)
     best_scores = sim_m[np.arange(sim_m.shape[0]), best_idx]
     names = np.where(best_scores > 0, choices_arr[best_idx], "")
     return dict(zip(queries, zip(names, best_scores)))
+
+
+def get_matches(queries, choices, scorer, score_cutoff, workers):
+    sim_m = get_score_matrix(queries, choices, scorer, score_cutoff, workers)
+    return get_matches_from_matrix(queries, sim_m, choices)
 
 
 # Column-level aggregation
@@ -77,28 +83,28 @@ def aggregate_column_score(raw_scores, filled_col, percentile=75):
 
 def compute_column_features(
     filled_columns: list[list],
-    toponym_scores: dict,
-    month_scores: dict,
-    marital_status_scores: dict,
+    value_pos: dict,
+    toponym_best: np.ndarray,
+    month_best: np.ndarray,
+    marital_best: np.ndarray,
 ):
     features = []
     for filled_col in filled_columns:
+        n = len(filled_col)
         non_empty_only_alphabetic = [
             "".join(filter(str.isalpha, c)) for c in filled_col
         ]
-        should_score_flags = [should_score_cell(cell) for cell in filled_col]
-        col_toponym_scores = [
-            toponym_scores.get(cell, (None, 0.0))[1] if flag else 0.0
-            for cell, flag in zip(filled_col, should_score_flags)
-        ]
-        col_month_scores = [
-            month_scores.get(cell, (None, 0.0))[1] if flag else 0.0
-            for cell, flag in zip(filled_col, should_score_flags)
-        ]
-        col_marital_status_scores = [
-            marital_status_scores.get(cell, (None, 0.0))[1] if flag else 0.0
-            for cell, flag in zip(filled_col, should_score_flags)
-        ]
+        flags = np.fromiter(
+            (should_score_cell(c) for c in filled_col), dtype=bool, count=n
+        )
+        idx = np.fromiter(
+            (value_pos.get(c, -1) for c in filled_col), dtype=np.intp, count=n
+        )
+        idx = np.where(flags, idx, -1)
+
+        col_toponym_scores = toponym_best[idx].tolist()
+        col_month_scores = month_best[idx].tolist()
+        col_marital_status_scores = marital_best[idx].tolist()
 
         features.append(
             {
@@ -117,7 +123,7 @@ def compute_column_features(
                 ),
                 "mean_alphabetic_value_len": column_mean_value_len(
                     non_empty_only_alphabetic
-                )
+                ),
             }
         )
 
