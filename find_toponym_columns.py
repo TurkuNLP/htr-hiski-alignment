@@ -176,7 +176,7 @@ MAX_MEAN_N_WORDS = 3.0
 MIN_MEAN_VALUE_LEN = 2.5
 VALUES_TO_FILL = {
     '"',
-    "''"
+    "''",
     '-"-',
     '-"',
     '"-',
@@ -186,7 +186,7 @@ VALUES_TO_FILL = {
     "\"Do",
     "do",
     "Do",
-    "Do."
+    "Do.",
     'Dito',
     "jo",
     "J",
@@ -199,7 +199,6 @@ OUTPUT_COLUMNS = [
     "possibly_related_toponyms",
     "row_columns",
     "row_columns_categorized",
-    "found_toponym_columns",
     "year_prediction",
     "duplicate",
     "duplicate_of",
@@ -250,15 +249,15 @@ for events_json in tqdm(jsons):
         workers=-1,
         dtype=np.float32,
     )
+    value_pos = {v: i for i, v in enumerate(all_values)}
 
     toponym_best = np.append(sim_m[:, :n_top].max(axis=1), np.float32(0.0))
     month_best = np.append(sim_m[:, n_top:n_top + n_month].max(axis=1), np.float32(0.0))
     marital_best = np.append(sim_m[:, n_top + n_month:].max(axis=1), np.float32(0.0))
 
-    value_pos = {v: i for i, v in enumerate(all_values)}
+    del sim_m
 
     n_rows = len(events_with_info)
-    found_toponym_columns_col = [None] * n_rows
     row_data_filled_col = [None] * n_rows
     possibly_related_toponyms_col = [None] * n_rows
 
@@ -290,8 +289,6 @@ for events_json in tqdm(jsons):
             month_score_threshold=MONTH_SCORE_THRESHOLD,
         )
 
-        found_toponym_columns = [list(tc) for tc in group_toponym_cols]
-
         row_columns_categorized = group_df.iloc[0]["row_columns_categorized"]
         place_categories = [
             category for category in row_columns_categorized
@@ -299,7 +296,7 @@ for events_json in tqdm(jsons):
         ]
         n_place = len(place_categories)
 
-        # Precompute which found columns survive the top-n filter (order preserved)
+        # Precompute which found columns survive the top-n filter
         if place_categories and len(group_toponym_cols) > n_place:
             top_positions = sorted(
                 range(len(group_toponym_cols)),
@@ -311,7 +308,7 @@ for events_json in tqdm(jsons):
         else:
             selected_entries = group_toponym_cols
 
-        # Transpose filled columns back to row-oriented format in one go
+        # Transpose filled columns back
         n_cols = len(group_cols_filled)
         n_rows_group = len(group_df)
         all_rows_filled = [
@@ -346,13 +343,9 @@ for events_json in tqdm(jsons):
             ]
 
             pos = index_to_pos[orig_idx]
-            found_toponym_columns_col[pos] = found_toponym_columns
             row_data_filled_col[pos] = row_data_filled
             possibly_related_toponyms_col[pos] = possibly_related_toponyms
 
-    events["found_toponym_columns"] = pd.Series(
-        found_toponym_columns_col, index=events_with_info.index
-    ).reindex(events.index)
     events["row_data_filled"] = pd.Series(
         row_data_filled_col, index=events_with_info.index
     ).reindex(events.index)

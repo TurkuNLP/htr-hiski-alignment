@@ -1,3 +1,5 @@
+from functools import lru_cache
+
 import numpy as np
 import rapidfuzz
 from itertools import zip_longest
@@ -28,6 +30,7 @@ def fill_values(column, values_to_fill={'"', "1o", "do", "Do", "jo", "J"}):
                 last_value = cell
     return filled_cells
 
+@lru_cache(maxsize=None)
 def should_score_cell(cell: str, isdigit_threshold=0.5) -> bool:
     """
     Filter out cells that are unlikely to be toponyms regardless of content.
@@ -42,7 +45,6 @@ def should_score_cell(cell: str, isdigit_threshold=0.5) -> bool:
 
 def column_mean_value_len(column):
     return sum(map(len, column)) / len(column)
-
 
 def get_score_matrix(queries, choices, scorer, score_cutoff, workers):
     return rapidfuzz.process.cdist(
@@ -65,9 +67,7 @@ def get_matches(queries, choices, scorer, score_cutoff, workers):
     return get_matches_from_matrix(queries, sim_m, choices)
 
 
-# Column-level aggregation
-
-def aggregate_column_score(raw_scores, filled_col, percentile=75):
+def aggregate_column_score(scores: np.ndarray, non_empty: np.ndarray, percentile=75) -> float:
     """
     Aggregate per-cell scores into a single column score.
 
@@ -76,10 +76,10 @@ def aggregate_column_score(raw_scores, filled_col, percentile=75):
     a column with a few lucky matches among mostly non-toponyms does not score
     artificially high.
     """
-    non_empty_scores = [s for s, c in zip(raw_scores, filled_col) if c]
-    if not non_empty_scores:
+    selected = scores[non_empty]
+    if selected.size == 0:
         return 0.0
-    return float(np.percentile(non_empty_scores, percentile))
+    return float(np.percentile(selected, percentile))
 
 def compute_column_features(
     filled_columns: list[list],
@@ -91,35 +91,37 @@ def compute_column_features(
     features = []
     for filled_col in filled_columns:
         n = len(filled_col)
-        non_empty_only_alphabetic = [
-            "".join(filter(str.isalpha, c)) for c in filled_col
-        ]
+        non_empty = np.fromiter((bool(c) for c in filled_col), dtype=bool, count=n)
         flags = np.fromiter(
             (should_score_cell(c) for c in filled_col), dtype=bool, count=n
         )
+
         idx = np.fromiter(
-            (value_pos.get(c, -1) for c in filled_col), dtype=np.intp, count=n
+            # Unknown or unscored cells select 0.0
+            (value_pos.get(c, -1) for c in filled_col),
+            dtype=np.intp, count=n
         )
         idx = np.where(flags, idx, -1)
 
-        col_toponym_scores = toponym_best[idx].tolist()
-        col_month_scores = month_best[idx].tolist()
-        col_marital_status_scores = marital_best[idx].tolist()
+        non_empty_only_alphabetic = [
+            "".join(filter(str.isalpha, c)) for c in filled_col
+        ]
 
         features.append(
             {
                 "toponym_score": aggregate_column_score(
-                    col_toponym_scores, filled_col
+                    toponym_best[idx], non_empty
                 ),
                 "month_score": aggregate_column_score(
-                    col_month_scores, filled_col
+                    month_best[idx], non_empty
                 ),
                 "marital_status_score": aggregate_column_score(
-                    col_marital_status_scores, filled_col
+                    marital_best[idx], non_empty
                 ),
                 "mean_n_words": (
                     float(np.mean([len(c.split()) for c in filled_col]))
-                    if filled_col else 0.0
+                    if filled_col
+                    else 0.0
                 ),
                 "mean_alphabetic_value_len": column_mean_value_len(
                     non_empty_only_alphabetic
