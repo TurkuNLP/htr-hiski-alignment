@@ -216,6 +216,7 @@ OUTPUT_COLUMNS = [
     "in/out",
     "side",
     "file_row",
+    "file_path"
 ]
 
 combined_valid = [*valid_toponyms, *valid_months, *valid_marital_statuses]
