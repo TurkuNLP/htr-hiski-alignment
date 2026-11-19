@@ -14,7 +14,7 @@ echo "Finding duplicates"
     --scorer "ratio" \
     --scorer-threshold 75 \
     --max-year-difference 0 \
-    --min-info-count 0 \
+    --min-info-count 1 \
     --allow-invalid-years \
     --allow-unknown-directions
 

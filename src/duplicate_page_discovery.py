@@ -19,8 +19,6 @@ class DuplicateConfig:
     threshold scale must match the scorer:
       normalized scorers (e.g. distance.Levenshtein.normalized_similarity) -> 0.0-1.0
       fuzz.* scorers (e.g. fuzz.ratio, fuzz.token_sort_ratio)              -> 0-100
-
-    dtype: score matrix dtype passed to rapidfuzz.process.cdist.
     """
 
     max_year_diff: int = 0
@@ -32,7 +30,7 @@ class DuplicateConfig:
     all_directions: tuple = ("in", "out", "both", "?")
     strict_directions: tuple = ("in", "out")
     allow_unknown_directions: bool = True
-    min_info_count: int = 0
+    min_info_count: int = 1
     join_char: str = ""
     n_workers: int = -1
     row_data_column: str = "row_data"
@@ -57,11 +55,11 @@ class DuplicateConfig:
         "doctype",
         "print_type",
         "book_source",
+        "is_ap",
         "image_range_start",
         "image_range_end",
         "file_path",
     )
-    dtype: type = np.float32
 
 
 # Data loading
@@ -78,7 +76,6 @@ def load_parish_df(parish_jsonl: str | Path) -> pd.DataFrame:
     parish_df = pd.read_json(parish_jsonl, lines=True)
     parish_df["duplicate"] = False
     parish_df["duplicate_of"] = None
-    parish_df["is_ap"] = parish_df["book_source"].str.contains("ap")
     return parish_df
 
 
@@ -184,10 +181,10 @@ def build_page_records(
 
 def compute_book_order(pages: list[dict]) -> list[str]:
     """AP books first (reference), then non-AP books by descending informative event count."""
-    ap_books = {p["book"] for p in pages if p["is_ap"]}
+    ap_books = {p["book"] for p in pages if p["is_ap"] is True}
     non_ap_counts: dict[str, int] = defaultdict(int)
     for p in pages:
-        if not p["is_ap"]:
+        if p["is_ap"] is not True:
             non_ap_counts[p["book"]] += p["info_count"]
     non_ap_order = sorted(non_ap_counts, key=lambda b: -non_ap_counts[b])
     return list(ap_books) + non_ap_order
@@ -204,7 +201,7 @@ def page_similarity_matrix(
     rapidfuzz.process.cdist scores the remainder with score_cutoff so
     unreachable pairs are rejected early.
     """
-    sim = np.zeros((len(ref_pages), len(cand_pages)), dtype=config.dtype)
+    sim = np.zeros((len(ref_pages), len(cand_pages)))
 
     ref_idx = np.arange(len(ref_pages))
     cand_idx = np.arange(len(cand_pages))
@@ -214,39 +211,27 @@ def page_similarity_matrix(
         [cand_pages[j]["text"] for j in cand_idx],
         scorer=config.scorer,
         score_cutoff=config.threshold,
-        dtype=config.dtype,
         workers=config.n_workers,
     )
     sim[np.ix_(ref_idx, cand_idx)] = sub
     return sim
 
+def year_inside_valid_bounds(year, valid_year_bounds):
+    return (
+        year >= valid_year_bounds[0]
+        and year <= valid_year_bounds[1]
+    )
 
 # Duplicate discovery
 def select_year_eligible(
     cand_dir_pages: list[dict],
     ref_year: int,
     max_year_diff: int,
-    valid_year_bounds: tuple,
-    allow_invalid_years: bool,
 ) -> list[dict]:
-    if allow_invalid_years:
-        return [
-            page
-            for page in cand_dir_pages
-            if (
-                min(ref_year, page["year_prediction"])
-                <= valid_year_bounds[0]
-                or min(ref_year, page["year_prediction"])
-                >= valid_year_bounds[1]
-            )
-            or abs(page["year_prediction"] - ref_year) <= max_year_diff
-        ]
-    else:
-        return [
-            page
-            for page in cand_dir_pages
-            if abs(page["year_prediction"] - ref_year) <= max_year_diff
-        ]
+    return [
+        page for page in cand_dir_pages
+        if abs(page["year_prediction"] - ref_year) <= max_year_diff
+    ]
 
 
 def match_ref_group_to_candidates(
@@ -257,7 +242,7 @@ def match_ref_group_to_candidates(
 ) -> None:
     """Score one reference group against candidates and record matches in place."""
     sim_m = page_similarity_matrix(ref_group, year_eligible_cands, config)
-    threshold = config.dtype(config.threshold)
+    threshold = config.threshold
 
     for cand_i, cand_page in enumerate(year_eligible_cands):
         scores = sim_m[:, cand_i]
@@ -296,8 +281,6 @@ def match_book_pair(
                 cand_dir_pages,
                 ref_year,
                 max_year_diff=config.max_year_diff,
-                valid_year_bounds=config.valid_year_prediction_bounds,
-                allow_invalid_years=config.allow_invalid_years
             )
             if not year_eligible:
                 continue
@@ -313,10 +296,20 @@ def find_duplicate_pages(
     book_order = compute_book_order(pages)
     # Pages with no informative rows cannot produce meaningful duplicate matches
     # on either side so they are excluded from comparison
-    informative_pages = [
-        p for p in pages if p["info_count"] >= config.min_info_count
-    ]
-    book_to_pages = group_pages_by_book(informative_pages)
+    pages_to_compare = pages
+    if config.min_info_count > 0:
+        pages_to_compare = [
+            p for p in pages if p["info_count"] >= config.min_info_count
+        ]
+    # exclude pages with years out of bounds
+    if config.allow_invalid_years is False:
+        pages_to_compare = [
+            p for p in pages if year_inside_valid_bounds(
+                p["year_prediction"], config.valid_year_prediction_bounds
+            )
+        ]
+
+    book_to_pages = group_pages_by_book(pages_to_compare)
     duplicate_page_matches: dict[PageKey, list] = defaultdict(list)
     valid_direction_pairs = build_valid_direction_pairs(
         all_directions=config.all_directions,

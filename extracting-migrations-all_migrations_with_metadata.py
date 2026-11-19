@@ -13,6 +13,7 @@ from src.extract_migrations_with_metadata.extract_from_row_columns import(
     parse_book_name
 )
 import json
+import orjson
 
 argparser = argparse.ArgumentParser()
 argparser.add_argument("-b", "--books")
@@ -134,6 +135,7 @@ def iter_book_rows(book, image_ranges):
         book, BOOK_TYPE_SEPARATORS
     )
     parish_id = parish_to_parish_id[parish]
+    is_ap = "ap" in book_source
 
     for image_range, directions in image_ranges.items():
         range_start, range_end = image_range.split("-")
@@ -155,6 +157,7 @@ def iter_book_rows(book, image_ranges):
                     "doctype": doctype,
                     "print_type": print_type,
                     "book_source": book_source,
+                    "is_ap": is_ap,
                     "book_year_start": year_start,
                     "book_year_end": year_end,
                     "image_range_start": range_start,
@@ -172,12 +175,13 @@ OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 for parish_id in parish_to_parish_id.values():
     parish_output_path(parish_id, output_dir=OUTPUT_DIR).write_text("")
 
-for book, image_ranges in tqdm(list(all_file_paths.items())):
-    lines_by_parish = {}
+all_lines_by_parish = {}
+for book, image_ranges in tqdm(all_file_paths.items()):
     for parish_id, row in iter_book_rows(book, image_ranges):
-        lines_by_parish.setdefault(parish_id, []).append(
-            json.dumps(row, ensure_ascii=False) + "\n"
+        all_lines_by_parish.setdefault(parish_id, []).append(
+            orjson.dumps(row) + b"\n"
         )
-    for parish_id, lines in lines_by_parish.items():
-        with open(parish_output_path(parish_id, output_dir=OUTPUT_DIR), "a") as fp:
-            fp.writelines(lines)
+
+for parish_id, lines in tqdm(all_lines_by_parish.items()):
+    with open(parish_output_path(parish_id, output_dir=OUTPUT_DIR), "ab") as fp:
+        fp.writelines(lines)
