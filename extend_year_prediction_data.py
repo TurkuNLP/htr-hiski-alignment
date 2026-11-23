@@ -8,11 +8,15 @@ from pathlib import Path
 from tqdm.cli import tqdm
 from collections import defaultdict
 
+from src.year_predictions import pick_year, fill_years
+
 argparser = argparse.ArgumentParser()
 argparser.add_argument("-i", "--year-predictions")
 argparser.add_argument("-b", "--books")
 argparser.add_argument("-ids", "--book-ids")
 argparser.add_argument("-o", "--output")
+argparser.add_argument("--fill", action="store_true")
+argparser.add_argument("--fill-limit", type=int, default=2)
 args = argparser.parse_args()
 
 # "data/year-predictions"
@@ -23,6 +27,8 @@ BOOK_ID_JSON = args.book_ids
 BOOK_CSV_DIR = Path(args.books)
 # "outputs/csv/year_predictions_extended.csv"
 OUTPUT = args.output
+FILL_YEARS = args.fill
+FILL_LIMIT = args.fill_limit
 
 DOC_TYPES = ("muuttaneet", "muuttokirjoja", "sekalaiset")
 
@@ -56,16 +62,35 @@ files = list(YEAR_PREDICTIONS.glob("*.jsonl"))
 if len(files) == 0:
     raise ValueError("No event files found")
 
-events = []
+all_year_objects = []
 for file_path in tqdm(files):
-    file_df = pd.read_json(file_path, lines=True)
-    events.append(file_df)
-event_year_df = pd.concat(events)
-event_year_df = event_year_df[
-    ~event_year_df["corrected"].isna()
-    & event_year_df["corrected"].astype(str).str.isnumeric()
-]
-event_year_df["year"] = event_year_df["corrected"].astype("int64")
+    with open(file_path, "rb") as fp:
+        all_year_objects.extend(json.loads(line) for line in fp)
+event_year_df = pd.DataFrame(all_year_objects)
+
+event_year_df["year_prediction"] = pick_year(event_year_df)
+
+if FILL_YEARS:
+    reading_order = (
+        event_year_df.assign(
+            _page=pd.to_numeric(event_year_df["page"], errors="coerce"),
+            _side=event_year_df["side"].map({"left": 0, "right": 1}),
+        )
+        .sort_values(["book", "_page", "_side"], kind="stable")
+        .index
+    )
+    filled_df = fill_years(
+        event_year_df.loc[reading_order, ["book", "year_prediction"]].copy(),
+        limit=FILL_LIMIT,
+    )
+    event_year_df["year"] = filled_df["year_prediction_filled"]
+else:
+    event_year_df["year"] = event_year_df["year_prediction"]
+
+event_year_df = event_year_df[event_year_df["year"] != 0].drop(
+    columns=["year_prediction"]
+)
+event_year_df["year"] = event_year_df["year"].astype("int64")
 event_year_df["book_id"] = event_year_df["book"].map(
     lambda x: book_to_id.get(x, 0)
 )
