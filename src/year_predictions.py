@@ -160,7 +160,7 @@ def fill_years(
     column_to_fill_from: str = "year",
     column_to_group_by: str = "book",
     column_to_read_range_from: str = "year_range",
-    limit: int = 2,
+    pad_limit: int = 2,
 ) -> pd.Series:
     """
     Fill unknown (0) years using neighboring rows of the same book.
@@ -173,7 +173,7 @@ def fill_years(
     2. A run of unknown years between two equal known years is filled
        with that year.
     3. Remaining unknown years are filled from the nearest known year at
-       most `limit` rows away in either direction.
+       most `pad_limit` rows away in either direction.
 
     Fills never cross book boundaries.
 
@@ -187,7 +187,7 @@ def fill_years(
         Column identifying the book of each row.
     column_to_read_range_from : str, default "year_range"
         Column holding each book's range as ``"start-end"``.
-    limit : int, default 2
+    pad_limit : int, default 2
         Maximum number of consecutive rows filled in step 3.
 
     Returns
@@ -217,8 +217,8 @@ def fill_years(
     by_book_filled = filled.groupby(year_predictions_df[column_to_group_by])
     return (
         by_book_filled
-        .ffill(limit=limit).groupby(year_predictions_df[column_to_group_by])
-        .bfill(limit=limit)
+        .ffill(limit=pad_limit).groupby(year_predictions_df[column_to_group_by])
+        .bfill(limit=pad_limit)
         .fillna(0)
         .astype(int)
     )

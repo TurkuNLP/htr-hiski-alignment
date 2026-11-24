@@ -2,7 +2,7 @@
 # coding: utf-8
 
 import argparse
-import json
+import orjson as json
 import pandas as pd
 from pathlib import Path
 from tqdm.cli import tqdm
@@ -16,7 +16,7 @@ argparser.add_argument("-b", "--books")
 argparser.add_argument("-ids", "--book-ids")
 argparser.add_argument("-o", "--output")
 argparser.add_argument("--fill", action="store_true")
-argparser.add_argument("--fill-limit", type=int, default=2)
+argparser.add_argument("--fill-pad-limit", type=int, default=2)
 args = argparser.parse_args()
 
 # "data/year-predictions"
@@ -28,13 +28,13 @@ BOOK_CSV_DIR = Path(args.books)
 # "outputs/csv/year_predictions_extended.csv"
 OUTPUT = args.output
 FILL_YEARS = args.fill
-FILL_LIMIT = args.fill_limit
+FILL_PAD_LIMIT = args.fill_pad_limit
 
 DOC_TYPES = ("muuttaneet", "muuttokirjoja", "sekalaiset")
 
 # Load book IDs data
-with open(BOOK_ID_JSON, "r") as f:
-    book_id_to_book = json.load(f)
+with open(BOOK_ID_JSON, "rb") as f:
+    book_id_to_book = json.loads(f.read())
 
 book_id_to_book = {
     int(b_id): values for b_id, values in book_id_to_book.items()
@@ -99,7 +99,7 @@ if FILL_YEARS:
         column_to_fill_from="year",
         column_to_group_by="year_fill_groups",
         column_to_read_range_from="year_range",
-        limit=FILL_LIMIT,
+        pad_limit=FILL_PAD_LIMIT,
     )
     all_year_data = all_year_data.drop("year_fill_groups", axis="columns")
     all_year_data["year"] = all_year_data.pop("year_filled")
