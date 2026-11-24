@@ -8,7 +8,7 @@ from pathlib import Path
 from tqdm.cli import tqdm
 from collections import defaultdict
 
-from src.year_predictions import pick_year, fill_years
+from src.year_predictions import fill_years, pick_year
 
 argparser = argparse.ArgumentParser()
 argparser.add_argument("-i", "--year-predictions")
@@ -66,30 +66,45 @@ all_year_objects = []
 for file_path in tqdm(files):
     with open(file_path, "rb") as fp:
         all_year_objects.extend(json.loads(line) for line in fp)
-event_year_df = pd.DataFrame(all_year_objects)
 
-event_year_df["year_prediction"] = pick_year(event_year_df)
+all_year_data = pd.DataFrame.from_dict(all_year_objects)
+all_year_data = all_year_data.rename(
+    {
+        "year_range": "year_range",
+        "page": "page",
+        "side": "side",
+        "original": "year_original",
+        "corrected": "year_corrected",
+    },
+    axis="columns",
+)
+
+all_year_data = all_year_data[
+    ["book", "year_range", "page", "side", "year_original", "year_corrected"]
+]
+all_year_data["page"] = all_year_data["page"].astype(int)
+all_year_data["year"] = pick_year(
+    all_year_data, "year_corrected", "year_original"
+)
 
 if FILL_YEARS:
-    reading_order = (
-        event_year_df.assign(
-            _page=pd.to_numeric(event_year_df["page"], errors="coerce"),
-            _side=event_year_df["side"].map({"left": 0, "right": 1}),
-        )
-        .sort_values(["book", "_page", "_side"], kind="stable")
-        .index
+    all_year_data["year_fill_groups"] = (
+        all_year_data["book"] + all_year_data["side"]
     )
-    filled_df = fill_years(
-        event_year_df.loc[reading_order, ["book", "year_prediction"]].copy(),
+    reading_order = all_year_data.sort_values(
+        ["book", "page"], kind="stable"
+    ).index
+    all_year_data["year_filled"] = fill_years(
+        all_year_data.loc[reading_order],
+        column_to_fill_from="year",
+        column_to_group_by="year_fill_groups",
+        column_to_read_range_from="year_range",
         limit=FILL_LIMIT,
     )
-    event_year_df["year"] = filled_df["year_prediction_filled"]
-else:
-    event_year_df["year"] = event_year_df["year_prediction"]
+    all_year_data = all_year_data.drop("year_fill_groups", axis="columns")
+    all_year_data["year"] = all_year_data.pop("year_filled")
 
-event_year_df = event_year_df[event_year_df["year"] != 0].drop(
-    columns=["year_prediction"]
-)
+event_year_df = all_year_data[all_year_data["year"] != 0].copy()
 event_year_df["year"] = event_year_df["year"].astype("int64")
 event_year_df["book_id"] = event_year_df["book"].map(
     lambda x: book_to_id.get(x, 0)
