@@ -110,7 +110,8 @@ config = DuplicateConfig(
     allow_unknown_directions=ALLOW_UNKNOWN_DIRECTIONS,
     min_info_count=MIN_INFO_COUNT,
     join_char=JOIN_CHAR,
-    row_data_column="row_data_filled" if USE_FILLED_VALUES else "row_data"
+    row_data_column="row_data_filled" if USE_FILLED_VALUES else "row_data",
+    strict_directions=("in", "out", "out:abroad", "out:?")
 )
 
 OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
