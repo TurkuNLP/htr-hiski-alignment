@@ -1,5 +1,5 @@
 from functools import lru_cache
-
+import fastpercentile
 import numpy as np
 import rapidfuzz
 from itertools import zip_longest
@@ -31,16 +31,21 @@ def fill_values(column, values_to_fill={'"', "1o", "do", "Do", "jo", "J"}):
     return filled_cells
 
 @lru_cache(maxsize=None)
-def should_score_cell(cell: str, isdigit_threshold=0.5) -> bool:
+def should_score_cell(cell: str, isdigit_threshold=0.5, min_len=2) -> bool:
     """
     Filter out cells that are unlikely to be toponyms regardless of content.
     """
-    if not cell:
+    cell_len = len(cell)
+    if cell_len < min_len:
         return False
     if cell.isdigit():
         return False
-    if sum(c.isdigit() for c in cell) / len(cell) >= isdigit_threshold:
+    if cell.isalpha():
+        return True
+
+    if sum(c.isdigit() for c in cell) / cell_len >= isdigit_threshold:
         return False
+
     return True
 
 def column_mean_value_len(column):
@@ -79,7 +84,7 @@ def aggregate_column_score(scores: np.ndarray, non_empty: np.ndarray, percentile
     selected = scores[non_empty]
     if selected.size == 0:
         return 0.0
-    return float(np.percentile(selected, percentile))
+    return float(fastpercentile.percentile(selected, percentile))
 
 def compute_column_features(
     filled_columns: list[list],

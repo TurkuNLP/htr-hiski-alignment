@@ -1,16 +1,17 @@
 #!/usr/bin/env python
 
 import argparse
-import numpy as np
-import pandas as pd
-import json
-import rapidfuzz
+import orjson as json
+from collections import defaultdict
 from pathlib import Path
+
+import numpy as np
+import rapidfuzz
 from tqdm.cli import tqdm
 
 from src.toponym_column_detection import (
     compute_column_features, fill_values, find_toponym_columns,
-    get_matches, get_matches_from_matrix, get_score_matrix, transpose_page_table,
+    should_score_cell, transpose_page_table,
 )
 
 
@@ -38,7 +39,7 @@ def build_possibly_related_toponyms(
     - If place_categories is empty, no filtering is done and
       row_columns_categorized[col_idx] used for each found column as before.
     - If len(found) > len(place_categories), the top-n by score (n =
-      len(place_categories)) are kept and original original left-to-right order
+      len(place_categories)) are kept and original left-to-right order
       is restored.
     - Categories are assigned positionally: 1st kept column becomes
       place_categories[0], etc.
@@ -46,7 +47,6 @@ def build_possibly_related_toponyms(
     def value_at(col_idx: int) -> str:
         return row_data_filled[col_idx] if col_idx < len(row_data_filled) else ""
 
-    # All found entries in their original order
     all_entries = [
         (col_idx, value_at(col_idx), score)
         for col_idx, score in group_toponym_cols
@@ -58,7 +58,6 @@ def build_possibly_related_toponyms(
     ]
 
     if not place_categories:
-        # Fall back to the col_idx lookup if no categorized columns
         return [
             [
                 col_idx,
@@ -73,12 +72,10 @@ def build_possibly_related_toponyms(
     n = len(place_categories)
 
     if len(all_entries) > n:
-        # Select top-n by score
         top_n_positions = sorted(
             range(len(all_entries)),
             key=lambda i: -all_entries[i][2],
         )[:n]
-        # restore original left-to-right order
         selected = sorted(top_n_positions)
         filtered = [all_entries[i] for i in selected]
     else:
@@ -89,6 +86,7 @@ def build_possibly_related_toponyms(
         for i, (col_idx, value, score) in enumerate(filtered)
         if i < n
     ]
+
 
 argparser = argparse.ArgumentParser()
 argparser.add_argument("-i", "--input-dir")
@@ -102,31 +100,10 @@ args = argparser.parse_args()
 INPUT_DIR = Path(args.input_dir)
 # "outputs/toponym_cols/parishes"
 OUTPUT_DIR = args.output_dir
-# "outputs/csv/print_type_columns.csv"
-PRINT_TYPE_COLUMNS = args.print_type_columns
-# "outputs/json/print_type_column_names_categorized.json"
-PRINT_TYPE_COLUMNS_CATEGORIZED = args.print_type_columns_categorized
 # "data/json/placenames.jsonl"
 VALID_TOPONYMS = args.valid_toponyms
 
-print_columns_df = pd.read_csv(PRINT_TYPE_COLUMNS)
-print_columns_df = print_columns_df.rename(
-    {"print type": "print_type", "sarakkeet": "column"}, axis="columns"
-)
-print_columns_df["column"] = print_columns_df["column"].apply(
-    lambda cols: json.loads(cols.replace("'", '"'))
-)
-print_columns_df = print_columns_df.explode("column").reset_index(drop=True)
-print_columns_df["column_idx"] = print_columns_df.groupby("print_type").cumcount()
-
-with open(PRINT_TYPE_COLUMNS_CATEGORIZED, "r") as fp:
-    print_column_name_to_categorized = json.load(fp)
-
-print_columns_df["column_categorized"] = print_columns_df["column"].apply(
-    print_column_name_to_categorized.get
-)
-
-with open(VALID_TOPONYMS, "r") as fp:
+with open(VALID_TOPONYMS, "rb") as fp:
     valid_toponyms = set(json.loads(line)["spelling"] for line in fp)
 
 with open("data/etunimi_split.txt", "r") as fp:
@@ -169,8 +146,8 @@ valid_marital_statuses = {
 }
 
 SCORER = rapidfuzz.fuzz.ratio
-SCORE_CUTOFF = 60
-MIN_SCORE = 60
+SCORE_CUTOFF = 70
+MIN_SCORE = 70
 GAP_THRESHOLD = 10
 MAX_MEAN_N_WORDS = 3.0
 MIN_MEAN_VALUE_LEN = 2.5
@@ -223,51 +200,91 @@ combined_valid = [*valid_toponyms, *valid_months, *valid_marital_statuses]
 n_top = len(valid_toponyms)
 n_month = len(valid_months)
 
-toponym_arr = np.asarray(list(valid_toponyms), dtype=object)
-month_arr = np.asarray(list(valid_months), dtype=object)
-marital_arr = np.asarray(list(valid_marital_statuses), dtype=object)
+MAX_CACHED_VALUES = 2_000_000
+
+score_index: dict[str, int] = {}
+score_table = np.empty((0, 3), dtype=np.float32)
+
+
+def score_values(values, combined_valid, n_top, n_month):
+    global score_table
+
+    new = [v for v in values if v not in score_index]
+
+    if len(score_index) + len(new) > MAX_CACHED_VALUES:
+        score_index.clear()
+        score_table = np.empty((0, 3), dtype=np.float32)
+        new = list(values)
+
+    if new:
+        sim = rapidfuzz.process.cdist(
+            new,
+            combined_valid,
+            scorer=SCORER,
+            score_cutoff=SCORE_CUTOFF,
+            workers=-1,
+            dtype=np.float32,
+        )
+        block = np.column_stack([
+            sim[:, :n_top].max(axis=1),
+            sim[:, n_top:n_top + n_month].max(axis=1),
+            sim[:, n_top + n_month:].max(axis=1),
+        ])
+        start = score_table.shape[0]
+        score_table = np.vstack([score_table, block])
+        score_index.update((v, start + i) for i, v in enumerate(new))
+
+    return np.fromiter(
+        (score_index[v] for v in values), dtype=np.intp, count=len(values)
+    )
+
+
+def load_events(path):
+    with open(path, "rb") as fp:
+        return [json.loads(line) for line in fp if line.strip()]
+
 
 output_dir = Path(OUTPUT_DIR)
 output_dir.mkdir(parents=True, exist_ok=True)
 
-jsons = sorted(INPUT_DIR.glob("*.jsonl"), key=lambda x: Path.stat(x).st_size, reverse=True)
+jsons = sorted(
+    INPUT_DIR.glob("*.jsonl"),
+    key=lambda x: x.stat().st_size,
+    reverse=True
+)
 
 for events_json in tqdm(jsons):
-    events = pd.read_json(events_json, lines=True, dtype=False)
-    events_with_info = events[events["has_information"] == True]
+    events = load_events(events_json)
+    info_records = [e for e in events if e.get("has_information") == True]
 
     all_values = tuple({
         value
-        for row in events_with_info["row_data"].to_list()
-        for value in row
+        for e in info_records
+        for value in e["row_data"] if should_score_cell(value)
     })
 
-    sim_m = rapidfuzz.process.cdist(
-        all_values,
-        combined_valid,
-        scorer=SCORER,
-        score_cutoff=SCORE_CUTOFF,
-        workers=-1,
-        dtype=np.float32,
-    )
+    value_idx = score_values(all_values, combined_valid, n_top, n_month)
+    rows = score_table[value_idx]
+
+    toponym_best = np.append(rows[:, 0], np.float32(0.0))
+    month_best = np.append(rows[:, 1], np.float32(0.0))
+    marital_best = np.append(rows[:, 2], np.float32(0.0))
+
     value_pos = {v: i for i, v in enumerate(all_values)}
 
-    toponym_best = np.append(sim_m[:, :n_top].max(axis=1), np.float32(0.0))
-    month_best = np.append(sim_m[:, n_top:n_top + n_month].max(axis=1), np.float32(0.0))
-    marital_best = np.append(sim_m[:, n_top + n_month:].max(axis=1), np.float32(0.0))
+    for e in events:
+        e["row_data_filled"] = None
+        e["possibly_related_toponyms"] = None
 
-    del sim_m
+    groups = defaultdict(list)
+    for e in info_records:
+        key = (e.get("book"), e.get("page_n"), e.get("side"), e.get("in/out"))
+        if any(k is None for k in key):
+            continue
+        groups[key].append(e)
 
-    n_rows = len(events_with_info)
-    row_data_filled_col = [None] * n_rows
-    possibly_related_toponyms_col = [None] * n_rows
-
-    index_to_pos = {idx: pos for pos, idx in enumerate(events_with_info.index)}
-
-    for (book, page_n, side, direction), group_df in events_with_info.groupby(
-        ["book", "page_n", "side", "in/out"]
-    ):
-        group_row_data = group_df["row_data"].to_list()
+    for members in tqdm(groups.values(), leave=False):
+        group_row_data = [e["row_data"] for e in members]
         group_cols = transpose_page_table(group_row_data)
         group_cols_filled = [
             fill_values(col, VALUES_TO_FILL) for col in group_cols
@@ -290,14 +307,13 @@ for events_json in tqdm(jsons):
             month_score_threshold=MONTH_SCORE_THRESHOLD,
         )
 
-        row_columns_categorized = group_df.iloc[0]["row_columns_categorized"]
+        row_columns_categorized = members[0]["row_columns_categorized"]
         place_categories = [
             category for category in row_columns_categorized
             if is_place_category(category)
         ]
         n_place = len(place_categories)
 
-        # Precompute which found columns survive the top-n filter
         if place_categories and len(group_toponym_cols) > n_place:
             top_positions = sorted(
                 range(len(group_toponym_cols)),
@@ -309,17 +325,6 @@ for events_json in tqdm(jsons):
         else:
             selected_entries = group_toponym_cols
 
-        # Transpose filled columns back
-        n_cols = len(group_cols_filled)
-        n_rows_group = len(group_df)
-        all_rows_filled = [
-            [
-                group_cols_filled[col_j][row_i] if row_i < len(group_cols_filled[col_j]) else ""
-                for col_j in range(n_cols)
-            ]
-            for row_i in range(n_rows_group)
-        ]
-
         if place_categories:
             entry_categories = place_categories[:len(selected_entries)]
         else:
@@ -329,9 +334,14 @@ for events_json in tqdm(jsons):
                 for col_idx, _ in selected_entries
             ]
 
-        for row_i, orig_idx in enumerate(group_df.index):
-            row_data_filled = all_rows_filled[row_i]
-            possibly_related_toponyms = [
+        rows_filled = [
+            [col[row_i] if row_i < len(col) else "" for col in group_cols_filled]
+            for row_i in range(len(members))
+        ]
+
+        for e, row_data_filled in zip(members, rows_filled):
+            e["row_data_filled"] = row_data_filled
+            e["possibly_related_toponyms"] = [
                 [
                     col_idx,
                     row_data_filled[col_idx] if col_idx < len(row_data_filled) else "",
@@ -343,19 +353,10 @@ for events_json in tqdm(jsons):
                 )
             ]
 
-            pos = index_to_pos[orig_idx]
-            row_data_filled_col[pos] = row_data_filled
-            possibly_related_toponyms_col[pos] = possibly_related_toponyms
-
-    events["row_data_filled"] = pd.Series(
-        row_data_filled_col, index=events_with_info.index
-    ).reindex(events.index)
-    events["possibly_related_toponyms"] = pd.Series(
-        possibly_related_toponyms_col, index=events_with_info.index
-    ).reindex(events.index)
-    events = events.drop(columns=["possible_name"])
-
     output_filename = output_dir / f"{events_json.stem}.jsonl"
-    events[OUTPUT_COLUMNS].to_json(
-        output_filename, orient="records", lines=True, force_ascii=False
-    )
+    with open(output_filename, "wb") as fp:
+        for e in tqdm(events, leave=False):
+            record = {k: e.get(k) for k in OUTPUT_COLUMNS}
+            fp.write(
+                json.dumps(record) + b"\n"
+            )
