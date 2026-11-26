@@ -30,6 +30,36 @@ def fill_values(column, values_to_fill={'"', "1o", "do", "Do", "jo", "J"}):
                 last_value = cell
     return filled_cells
 
+
+def is_place_category(category: str) -> bool:
+    return (
+        category == "place"
+        or category.startswith("source")
+        or category.startswith("destination")
+    )
+
+
+def categorize_toponym_columns(
+    toponym_cols: list[int], col_names_categorized: list[str]
+) -> list[tuple[int, str]]:
+    """
+    Pair found columns with the place categories of the page, left to right.
+    """
+    place_categories = [
+        c for c in col_names_categorized if is_place_category(c)
+    ]
+    if place_categories:
+        return list(zip(toponym_cols, place_categories))
+    return [
+        (
+            col_idx, col_names_categorized[col_idx]
+            if col_idx < len(col_names_categorized)
+            else "unknown",
+        )
+        for col_idx in toponym_cols
+    ]
+
+
 @lru_cache(maxsize=None)
 def should_score_cell(cell: str, isdigit_threshold=0.5, min_len=2) -> bool:
     """

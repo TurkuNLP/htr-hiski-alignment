@@ -20,8 +20,8 @@ for jsonl_path in tqdm(jsonl_files):
             "row_data",
             "row_data_filled",
             "possibly_related_toponyms",
-            "row_columns",
-            "row_columns_categorized",
+            "col_names",
+            "col_names_categorized",
             "duplicate_of"
         ]
     ] = df[
@@ -29,8 +29,8 @@ for jsonl_path in tqdm(jsonl_files):
             "row_data",
             "row_data_filled",
             "possibly_related_toponyms",
-            "row_columns",
-            "row_columns_categorized",
+            "col_names",
+            "col_names_categorized",
             "duplicate_of"
         ]
     ].astype(str)

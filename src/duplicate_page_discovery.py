@@ -36,8 +36,8 @@ class DuplicateConfig:
     row_data_column: str = "row_data"
     output_columns: tuple = (
         "row_data",
-        "row_columns",
-        "row_columns_categorized",
+        "col_names",
+        "col_names_categorized",
         "possible_name",
         "possibly_related_toponyms",
         "has_information",

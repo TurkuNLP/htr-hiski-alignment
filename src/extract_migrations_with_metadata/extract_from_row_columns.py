@@ -81,8 +81,8 @@ def build_row(row_idx, row, cols, cols_categorized, metadata):
     row_writing = row[0]
     return {
         "row_data": row_writing,
-        "row_columns": cols,
-        "row_columns_categorized": cols_categorized,
+        "col_names": cols,
+        "col_names_categorized": cols_categorized,
         "possible_name": get_possible_name(row_writing, cols_categorized),
         "possibly_related_toponyms": get_possibly_related_toponyms(
             row_writing, cols_categorized
@@ -92,26 +92,26 @@ def build_row(row_idx, row, cols, cols_categorized, metadata):
         **metadata,
     }
 
-def get_possible_name(row_columns, cols_categorized) -> str | None:
+def get_possible_name(col_names, cols_categorized) -> str | None:
     possible_name = ""
     if len(cols_categorized) == 0:
         return possible_name
     if cols_categorized != []:
         if "name" in cols_categorized and (
             name_index := cols_categorized.index("name")
-        ) < len(row_columns):
-            possible_name = row_columns[name_index]
+        ) < len(col_names):
+            possible_name = col_names[name_index]
 
     return possible_name
 
 
 def get_possibly_related_toponyms(
-    row_columns, cols_categorized
+    col_names, cols_categorized
 ) -> list[tuple[int, str, str]] | list:
     if len(cols_categorized) == 0:
         return []
 
-    row_len = len(row_columns)
+    row_len = len(col_names)
 
     toponym_indexes = [
         (i, category)
@@ -123,7 +123,7 @@ def get_possibly_related_toponyms(
         return []
 
     possibly_related_toponyms = [
-        (i, row_columns[i], category)
+        (i, col_names[i], category)
         for i, category in toponym_indexes
         if i < row_len
     ]
@@ -131,8 +131,8 @@ def get_possibly_related_toponyms(
     return possibly_related_toponyms
 
 
-def get_has_information(row_columns, threshold) -> bool:
-    joined_cols = "".join(row_columns)
+def get_has_information(col_names, threshold) -> bool:
+    joined_cols = "".join(col_names)
     if len(tuple(c for c in joined_cols if c.isalpha())) > threshold:
         return True
     else:

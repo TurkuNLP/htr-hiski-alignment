@@ -10,34 +10,26 @@ import rapidfuzz
 from tqdm.cli import tqdm
 
 from src.toponym_column_detection import (
-    compute_column_features, fill_values, find_toponym_columns,
+    compute_column_features, fill_values, find_toponym_columns, is_place_category,
     should_score_cell, transpose_page_table,
 )
-
-
-def is_place_category(category: str) -> bool:
-    return (
-        category == "place"
-        or category.startswith("source")
-        or category.startswith("destination")
-    )
 
 
 def build_possibly_related_toponyms(
     group_toponym_cols: list[tuple],   # [(col_idx, score), …] — all found columns
     row_data_filled: list[str],
-    row_columns_categorized: list[str],
+    col_names_categorized: list[str],
 ) -> list[list]:
     """
     Map found toponym columns onto the ordered list of place-categories from
-    row_columns_categorized.
+    col_names_categorized.
 
     Rules:
-    - place_categories  = ordered subset of row_columns_categorized values that
+    - place_categories  = ordered subset of col_names_categorized values that
                           are either "place" or starts with
                           "source"/"destination"
     - If place_categories is empty, no filtering is done and
-      row_columns_categorized[col_idx] used for each found column as before.
+      col_names_categorized[col_idx] used for each found column as before.
     - If len(found) > len(place_categories), the top-n by score (n =
       len(place_categories)) are kept and original left-to-right order
       is restored.
@@ -53,7 +45,7 @@ def build_possibly_related_toponyms(
     ]
 
     place_categories = [
-        category for category in row_columns_categorized
+        category for category in col_names_categorized
         if is_place_category(category)
     ]
 
@@ -62,8 +54,8 @@ def build_possibly_related_toponyms(
             [
                 col_idx,
                 value,
-                row_columns_categorized[col_idx]
-                    if col_idx < len(row_columns_categorized) else "unknown",
+                col_names_categorized[col_idx]
+                    if col_idx < len(col_names_categorized) else "unknown",
                 score,
             ]
             for col_idx, value, score in all_entries
@@ -91,8 +83,6 @@ def build_possibly_related_toponyms(
 argparser = argparse.ArgumentParser()
 argparser.add_argument("-i", "--input-dir")
 argparser.add_argument("-o", "--output-dir")
-argparser.add_argument("-p", "--print-type-columns")
-argparser.add_argument("-pc", "--print-type-columns-categorized")
 argparser.add_argument("-t", "--valid-toponyms")
 args = argparser.parse_args()
 
@@ -174,8 +164,8 @@ OUTPUT_COLUMNS = [
     "row_data",
     "row_data_filled",
     "possibly_related_toponyms",
-    "row_columns",
-    "row_columns_categorized",
+    "col_names",
+    "col_names_categorized",
     "year_prediction",
     "duplicate",
     "duplicate_of",
@@ -307,9 +297,9 @@ for events_json in tqdm(jsons):
             month_score_threshold=MONTH_SCORE_THRESHOLD,
         )
 
-        row_columns_categorized = members[0]["row_columns_categorized"]
+        col_names_categorized = members[0]["col_names_categorized"]
         place_categories = [
-            category for category in row_columns_categorized
+            category for category in col_names_categorized
             if is_place_category(category)
         ]
         n_place = len(place_categories)
@@ -329,8 +319,8 @@ for events_json in tqdm(jsons):
             entry_categories = place_categories[:len(selected_entries)]
         else:
             entry_categories = [
-                row_columns_categorized[col_idx]
-                if col_idx < len(row_columns_categorized) else "unknown"
+                col_names_categorized[col_idx]
+                if col_idx < len(col_names_categorized) else "unknown"
                 for col_idx, _ in selected_entries
             ]
 
