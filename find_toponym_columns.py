@@ -96,13 +96,6 @@ VALID_TOPONYMS = args.valid_toponyms
 with open(VALID_TOPONYMS, "rb") as fp:
     valid_toponyms = set(json.loads(line)["spelling"] for line in fp)
 
-with open("data/etunimi_split.txt", "r") as fp:
-    valid_first_names = set(name.strip() for name in fp)
-with open("data/sukunimi_split.txt", "r") as fp:
-    valid_last_names = set(name.strip() for name in fp)
-with open("data/patron_split.txt", "r") as fp:
-    valid_patronyms = set(name.strip() for name in fp)
-
 valid_names = valid_first_names | valid_last_names | valid_patronyms
 
 valid_months = {
@@ -325,7 +318,10 @@ for events_json in tqdm(jsons):
             ]
 
         rows_filled = [
-            [col[row_i] if row_i < len(col) else "" for col in group_cols_filled]
+            [
+                col[row_i] if row_i < len(col) else ""
+                for col in group_cols_filled
+            ]
             for row_i in range(len(members))
         ]
 
@@ -334,7 +330,11 @@ for events_json in tqdm(jsons):
             e["possibly_related_toponyms"] = [
                 [
                     col_idx,
-                    row_data_filled[col_idx] if col_idx < len(row_data_filled) else "",
+                    (
+                        row_data_filled[col_idx]
+                        if col_idx < len(row_data_filled)
+                        else ""
+                    ),
                     category,
                     score,
                 ]
