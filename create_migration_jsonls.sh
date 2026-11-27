@@ -9,10 +9,15 @@ echo "Combining events with metadata"
     --books-metadata "outputs/csv/migration_books_metadata.csv" \
     --output-dir "outputs/json/migration_jsonls/0-with-metadata"
 
+echo "Filling columns"
+./fill_column_values.py \
+    --input-dir "outputs/json/migration_jsonls/0-with-metadata" \
+    --output-dir "outputs/json/migration_jsonls/1-with-filled_columns"
+
 echo "Finding duplicates"
 ./extracting-migrations-overlap_discovery.py \
-    --input-dir "outputs/json/migration_jsonls/0-with-metadata" \
-    --output-dir "outputs/json/migration_jsonls/1-with-duplicate-info" \
+    --input-dir "outputs/json/migration_jsonls/1-with-filled_columns"
+    --output-dir "outputs/json/migration_jsonls/2-with-duplicate-info" \
     --scorer "ratio" \
     --scorer-threshold 75 \
     --max-year-difference 0 \
@@ -22,6 +27,6 @@ echo "Finding duplicates"
 
 echo "Finding toponym columns"
 ./find_toponym_columns.py \
-    --input-dir "outputs/json/migration_jsonls/1-with-duplicate-info" \
-    --output-dir "outputs/json/migration_jsonls/2-final" \
+    --input-dir "outputs/json/migration_jsonls/2-with-duplicate-info" \
+    --output-dir "outputs/json/migration_jsonls/3-final" \
     --valid-toponyms "data/json/placenames.jsonl"

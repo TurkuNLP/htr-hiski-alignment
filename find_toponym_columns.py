@@ -10,74 +10,9 @@ import rapidfuzz
 from tqdm.cli import tqdm
 
 from src.toponym_column_detection import (
-    compute_column_features, fill_values, find_toponym_columns, is_place_category,
-    should_score_cell, transpose_page_table,
+    build_possibly_related_toponyms, compute_column_features,
+    find_toponym_columns, load_events, should_score_cell, transpose_page_table,
 )
-
-
-def build_possibly_related_toponyms(
-    group_toponym_cols: list[tuple],   # [(col_idx, score), …] — all found columns
-    row_data_filled: list[str],
-    col_names_categorized: list[str],
-) -> list[list]:
-    """
-    Map found toponym columns onto the ordered list of place-categories from
-    col_names_categorized.
-
-    Rules:
-    - place_categories  = ordered subset of col_names_categorized values that
-                          are either "place" or starts with
-                          "source"/"destination"
-    - If place_categories is empty, no filtering is done and
-      col_names_categorized[col_idx] used for each found column as before.
-    - If len(found) > len(place_categories), the top-n by score (n =
-      len(place_categories)) are kept and original left-to-right order
-      is restored.
-    - Categories are assigned positionally: 1st kept column becomes
-      place_categories[0], etc.
-    """
-    def value_at(col_idx: int) -> str:
-        return row_data_filled[col_idx] if col_idx < len(row_data_filled) else ""
-
-    all_entries = [
-        (col_idx, value_at(col_idx), score)
-        for col_idx, score in group_toponym_cols
-    ]
-
-    place_categories = [
-        category for category in col_names_categorized
-        if is_place_category(category)
-    ]
-
-    if not place_categories:
-        return [
-            [
-                col_idx,
-                value,
-                col_names_categorized[col_idx]
-                    if col_idx < len(col_names_categorized) else "unknown",
-                score,
-            ]
-            for col_idx, value, score in all_entries
-        ]
-
-    n = len(place_categories)
-
-    if len(all_entries) > n:
-        top_n_positions = sorted(
-            range(len(all_entries)),
-            key=lambda i: -all_entries[i][2],
-        )[:n]
-        selected = sorted(top_n_positions)
-        filtered = [all_entries[i] for i in selected]
-    else:
-        filtered = all_entries
-
-    return [
-        [col_idx, value, place_categories[i], score]
-        for i, (col_idx, value, score) in enumerate(filtered)
-        if i < n
-    ]
 
 
 argparser = argparse.ArgumentParser()
@@ -95,8 +30,6 @@ VALID_TOPONYMS = args.valid_toponyms
 
 with open(VALID_TOPONYMS, "rb") as fp:
     valid_toponyms = set(json.loads(line)["spelling"] for line in fp)
-
-valid_names = valid_first_names | valid_last_names | valid_patronyms
 
 valid_months = {
     "Tammikuu", "tammikuu", "Tammik.", "tammik.", "Tammi", "tammi",
@@ -134,23 +67,6 @@ MIN_SCORE = 70
 GAP_THRESHOLD = 10
 MAX_MEAN_N_WORDS = 3.0
 MIN_MEAN_VALUE_LEN = 2.5
-VALUES_TO_FILL = {
-    '"',
-    "''",
-    '-"-',
-    '-"',
-    '"-',
-    "1o",
-    "2o",
-    "2i",
-    "\"Do",
-    "do",
-    "Do",
-    "Do.",
-    'Dito',
-    "jo",
-    "J",
-}
 MARITAL_STATUS_SCORE_THRESHOLD = 75
 MONTH_SCORE_THRESHOLD = 75
 OUTPUT_COLUMNS = [
@@ -222,11 +138,6 @@ def score_values(values, combined_valid, n_top, n_month):
     )
 
 
-def load_events(path):
-    with open(path, "rb") as fp:
-        return [json.loads(line) for line in fp if line.strip()]
-
-
 output_dir = Path(OUTPUT_DIR)
 output_dir.mkdir(parents=True, exist_ok=True)
 
@@ -238,11 +149,10 @@ jsons = sorted(
 
 for events_json in tqdm(jsons):
     events = load_events(events_json)
-    info_records = [e for e in events if e.get("has_information") == True]
+    info_records = [e for e in events if e["has_information"] is True]
 
     all_values = tuple({
-        value
-        for e in info_records
+        value for e in info_records
         for value in e["row_data"] if should_score_cell(value)
     })
 
@@ -256,7 +166,6 @@ for events_json in tqdm(jsons):
     value_pos = {v: i for i, v in enumerate(all_values)}
 
     for e in events:
-        e["row_data_filled"] = None
         e["possibly_related_toponyms"] = None
 
     groups = defaultdict(list)
@@ -267,11 +176,9 @@ for events_json in tqdm(jsons):
         groups[key].append(e)
 
     for members in tqdm(groups.values(), leave=False):
-        group_row_data = [e["row_data"] for e in members]
-        group_cols = transpose_page_table(group_row_data)
-        group_cols_filled = [
-            fill_values(col, VALUES_TO_FILL) for col in group_cols
-        ]
+        group_cols_filled = transpose_page_table(
+            [e["row_data_filled"] for e in members]
+        )
 
         column_features = compute_column_features(
             filled_columns=group_cols_filled,
@@ -291,57 +198,10 @@ for events_json in tqdm(jsons):
         )
 
         col_names_categorized = members[0]["col_names_categorized"]
-        place_categories = [
-            category for category in col_names_categorized
-            if is_place_category(category)
-        ]
-        n_place = len(place_categories)
-
-        if place_categories and len(group_toponym_cols) > n_place:
-            top_positions = sorted(
-                range(len(group_toponym_cols)),
-                key=lambda i: -group_toponym_cols[i][1],
-            )[:n_place]
-            selected_entries = [
-                group_toponym_cols[i] for i in sorted(top_positions)
-            ]
-        else:
-            selected_entries = group_toponym_cols
-
-        if place_categories:
-            entry_categories = place_categories[:len(selected_entries)]
-        else:
-            entry_categories = [
-                col_names_categorized[col_idx]
-                if col_idx < len(col_names_categorized) else "unknown"
-                for col_idx, _ in selected_entries
-            ]
-
-        rows_filled = [
-            [
-                col[row_i] if row_i < len(col) else ""
-                for col in group_cols_filled
-            ]
-            for row_i in range(len(members))
-        ]
-
-        for e, row_data_filled in zip(members, rows_filled):
-            e["row_data_filled"] = row_data_filled
-            e["possibly_related_toponyms"] = [
-                [
-                    col_idx,
-                    (
-                        row_data_filled[col_idx]
-                        if col_idx < len(row_data_filled)
-                        else ""
-                    ),
-                    category,
-                    score,
-                ]
-                for (col_idx, score), category in zip(
-                    selected_entries, entry_categories
-                )
-            ]
+        for e in members:
+            e["possibly_related_toponyms"] = build_possibly_related_toponyms(
+                group_toponym_cols, e["row_data_filled"], col_names_categorized
+            )
 
     output_filename = output_dir / f"{events_json.stem}.jsonl"
     with open(output_filename, "wb") as fp:

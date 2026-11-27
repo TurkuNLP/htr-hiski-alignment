@@ -1,10 +1,17 @@
+import orjson as json
 from functools import lru_cache
 import fastpercentile
 import numpy as np
 import rapidfuzz
 from itertools import zip_longest
 
+
 # Helper functions
+
+
+def load_events(path):
+    with open(path, "rb") as fp:
+        return [json.loads(line) for line in fp if line.strip()]
 
 def transpose_page_table(page_data):
     return [
@@ -214,3 +221,69 @@ def find_toponym_columns(
         selected.append((int(idx), float(score)))
 
     return sorted(selected, key=lambda x: x[0])
+
+
+def build_possibly_related_toponyms(
+    group_toponym_cols: list[tuple],   # [(col_idx, score), …] — all found columns
+    row_data_filled: list[str],
+    col_names_categorized: list[str],
+) -> list[list]:
+    """
+    Map found toponym columns onto the ordered list of place-categories from
+    col_names_categorized.
+
+    Rules:
+    - place_categories  = ordered subset of col_names_categorized values that
+                          are either "place" or starts with
+                          "source"/"destination"
+    - If place_categories is empty, no filtering is done and
+      col_names_categorized[col_idx] used for each found column as before.
+    - If len(found) > len(place_categories), the top-n by score (n =
+      len(place_categories)) are kept and original left-to-right order
+      is restored.
+    - Categories are assigned positionally: 1st kept column becomes
+      place_categories[0], etc.
+    """
+    def value_at(col_idx: int) -> str:
+        return row_data_filled[col_idx] if col_idx < len(row_data_filled) else ""
+
+    all_entries = [
+        (col_idx, value_at(col_idx), score)
+        for col_idx, score in group_toponym_cols
+    ]
+
+    place_categories = [
+        category for category in col_names_categorized
+        if is_place_category(category)
+    ]
+
+    if not place_categories:
+        return [
+            [
+                col_idx,
+                value,
+                col_names_categorized[col_idx]
+                    if col_idx < len(col_names_categorized) else "unknown",
+                score,
+            ]
+            for col_idx, value, score in all_entries
+        ]
+
+    n = len(place_categories)
+
+    if len(all_entries) > n:
+        top_n_positions = sorted(
+            range(len(all_entries)),
+            key=lambda i: -all_entries[i][2],
+        )[:n]
+        selected = sorted(top_n_positions)
+        filtered = [all_entries[i] for i in selected]
+    else:
+        filtered = all_entries
+
+    return [
+        [col_idx, value, place_categories[i], score]
+        for i, (col_idx, value, score) in enumerate(filtered)
+        if i < n
+    ]
+
