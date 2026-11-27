@@ -21,6 +21,8 @@ echo "Extending year prediction data"
     --year-predictions "data/year-predictions" \
     --books "data/migration-data-csv-release-v1" \
     --book-ids "outputs/json/book_ids.json" \
+    --fill \
+    --fill-pad-limit 2 \
     --output "outputs/csv/year_predictions_extended.csv"
 
 echo "Combining mistakenly split tables"
